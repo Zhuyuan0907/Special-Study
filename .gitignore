@@ -1,0 +1,9 @@
+node_modules/
+# 個人紀錄（不要上傳）
+data/records.json
+data/records.json.tmp
+# 簡章 PDF 很大，用 npm run build-data 重新下載
+data/brochures/pdf/
+data/raw/
+.DS_Store
+server.log

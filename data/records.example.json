@@ -1,0 +1,407 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "ex-ntnu-cs",
+      "school": "國立臺灣師範大學",
+      "dept": "一般生 資訊工程學系",
+      "programId": "116-004-033",
+      "methods": [
+        "資料審查",
+        "面試",
+        "筆試"
+      ],
+      "fee": 1000,
+      "quota": 5,
+      "url": "",
+      "dates": [
+        {
+          "id": "c62f05ea-5634-4f3c-8aa5-c72f8c9a6254",
+          "kind": "reg",
+          "date": "2026-10-07",
+          "end": "",
+          "time": "17:00",
+          "note": "網路報名（09/29 09:00 起）"
+        },
+        {
+          "id": "c9348bfc-e1e5-4a5e-a258-19715ca04bf3",
+          "kind": "pay",
+          "date": "2026-10-07",
+          "end": "",
+          "time": "23:59",
+          "note": "繳費（09/29 09:00 起）"
+        },
+        {
+          "id": "40175c41-9c57-429b-a1d3-d163bd584a81",
+          "kind": "upload",
+          "date": "2026-10-08",
+          "end": "",
+          "time": "17:00",
+          "note": "上傳指定繳交資料（09/29 09:00 起）"
+        },
+        {
+          "id": "b78db691-0cd3-424b-8cf5-40abecc9a87a",
+          "kind": "letter",
+          "date": "2026-10-08",
+          "end": "",
+          "time": "17:00",
+          "note": "推薦函截止"
+        },
+        {
+          "id": "390fdb40-80d8-4b73-8ee8-827fd54a19d9",
+          "kind": "stage1",
+          "date": "2026-11-16",
+          "end": "",
+          "time": "",
+          "note": "二階名單公布"
+        },
+        {
+          "id": "6fdcfa13-0868-44b8-ad3a-43270b135c4b",
+          "kind": "interview",
+          "date": "2026-11-20",
+          "end": "",
+          "time": "",
+          "note": "二階時間"
+        },
+        {
+          "id": "004e068b-109c-4d8a-9cf9-af1f98c20e10",
+          "kind": "release",
+          "date": "2026-12-03",
+          "end": "",
+          "time": "09:00",
+          "note": "錄取放榜"
+        },
+        {
+          "id": "92eb9661-fdc8-4f1a-b201-e238bb72fc4f",
+          "kind": "review",
+          "date": "2026-12-06",
+          "end": "",
+          "time": "",
+          "note": "成績複查申請期限（12/03 09:00 起）"
+        },
+        {
+          "id": "7b6a83c4-0808-41f8-81ae-b5a517d3be84",
+          "kind": "confirm",
+          "date": "2026-12-16",
+          "end": "",
+          "time": "",
+          "note": "正取生報到（12/03 起）"
+        },
+        {
+          "id": "41879fc2-9df6-4440-974c-774dc86f39f7",
+          "kind": "wait",
+          "date": "2026-12-18",
+          "end": "",
+          "time": "",
+          "note": "開始遞補"
+        },
+        {
+          "id": "19f25b54-bb1c-48b4-bcf6-f8f33d76735c",
+          "kind": "wait",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "",
+          "note": "備取生遞補作業截止"
+        },
+        {
+          "id": "5d99a15e-bf78-4701-a44d-0dcd71396199",
+          "kind": "giveup",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "",
+          "note": "已報到生放棄資格截止"
+        }
+      ],
+      "docs": [
+        {
+          "id": "b75baa82-6c40-415a-b70f-3c729bf142b1",
+          "name": "自傳／個人陳述",
+          "done": true
+        },
+        {
+          "id": "51d2406a-2d08-443a-9c92-40891d539496",
+          "name": "讀書計畫",
+          "done": true
+        },
+        {
+          "id": "0755b137-5862-4e11-9142-2866be6d451a",
+          "name": "特殊表現證明文件",
+          "done": true
+        },
+        {
+          "id": "0b5845b4-5b21-4a2d-973e-c39ade8b36eb",
+          "name": "系所指定其他資料",
+          "done": true
+        }
+      ],
+      "notes": "甄選：書面審查 50%、面試+測驗 50%",
+      "status": "applied",
+      "waitNo": null,
+      "waitNow": null,
+      "choice": "",
+      "confirmDone": false,
+      "giveupDone": false,
+      "prep": "（範例）\n1. 90 秒自我介紹\n2. 說清楚自學專題的動機、遇到的困難和成果\n3. 二階是「面試+測驗」，複習基本程式題",
+      "asked": "",
+      "example": true,
+      "createdAt": 1793001600000
+    },
+    {
+      "id": "ex-nchu-cs",
+      "school": "國立中興大學",
+      "dept": "資訊工程學系",
+      "programId": "116-006-051",
+      "methods": [
+        "資料審查",
+        "面試"
+      ],
+      "fee": 800,
+      "quota": 1,
+      "url": "",
+      "dates": [
+        {
+          "id": "3f07ff7d-7289-4e18-b634-d544b3f8abcc",
+          "kind": "reg",
+          "date": "2026-11-09",
+          "end": "",
+          "time": "17:00",
+          "note": "網路報名及繳件（10/27 09:00 起）"
+        },
+        {
+          "id": "ade4446d-5e8b-4ae1-8910-5a9cbdc06ff9",
+          "kind": "pay",
+          "date": "2026-11-09",
+          "end": "",
+          "time": "",
+          "note": "繳費時間（10/27 09:00 起）"
+        },
+        {
+          "id": "13a4b07b-5dad-41c6-9908-a5c0911d26c3",
+          "kind": "stage1",
+          "date": "2026-11-30",
+          "end": "",
+          "time": "10:00",
+          "note": "面試名單公布"
+        },
+        {
+          "id": "4b2e879b-d517-4b34-8891-89af6b55ca78",
+          "kind": "interview",
+          "date": "2026-12-04",
+          "end": "",
+          "time": "",
+          "note": "面試時間"
+        },
+        {
+          "id": "03e74916-faa4-42a4-afcf-3b7ad41120b7",
+          "kind": "release",
+          "date": "2026-12-18",
+          "end": "",
+          "time": "",
+          "note": "放榜時間"
+        },
+        {
+          "id": "1d0d1588-119a-4c5c-8f6a-ed610757b5ba",
+          "kind": "review",
+          "date": "2026-12-24",
+          "end": "",
+          "time": "",
+          "note": "成績複查申請（12/18 起）"
+        },
+        {
+          "id": "ab9665a2-e9fc-4337-a23c-b59aa1546d93",
+          "kind": "confirm",
+          "date": "2027-01-04",
+          "end": "",
+          "time": "17:00",
+          "note": "正取生報到期限（12/28 09:00 起）"
+        },
+        {
+          "id": "40057289-884a-453d-a062-18521cd3c9b5",
+          "kind": "wait",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "17:00",
+          "note": "備取生遞補作業截止"
+        },
+        {
+          "id": "8658b736-73ce-4072-b12b-4ad5d8ed5d8c",
+          "kind": "giveup",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "17:00",
+          "note": "已報到生放棄截止"
+        }
+      ],
+      "docs": [
+        {
+          "id": "e8205d26-f7f4-4cd9-a6b7-73e58a63f72d",
+          "name": "自傳／個人陳述",
+          "done": true
+        },
+        {
+          "id": "4ab7edde-e2a5-43da-92f7-bbd8f762f3f4",
+          "name": "讀書計畫",
+          "done": true
+        },
+        {
+          "id": "1bd8e833-9e60-470f-a66c-6b8bb155b4dc",
+          "name": "特殊表現證明文件",
+          "done": false
+        },
+        {
+          "id": "c604605a-bd52-4174-b625-5915b7f3d421",
+          "name": "系所指定其他資料",
+          "done": false
+        }
+      ],
+      "notes": "甄選：書面審查 50%、面試 50%",
+      "status": "prep",
+      "waitNo": null,
+      "waitNow": null,
+      "choice": "",
+      "confirmDone": false,
+      "giveupDone": false,
+      "prep": "",
+      "asked": "",
+      "example": true,
+      "createdAt": 1793001601000
+    },
+    {
+      "id": "ex-nccu-cs",
+      "school": "國立政治大學",
+      "dept": "資訊工程學系",
+      "programId": "116-001-019",
+      "methods": [
+        "資料審查",
+        "面試"
+      ],
+      "fee": 800,
+      "quota": 3,
+      "url": "https://www.nccu.edu.tw/",
+      "dates": [
+        {
+          "id": "e3f90f86-a5aa-456d-8dc6-807e5327f22c",
+          "kind": "reg",
+          "date": "2026-11-10",
+          "end": "",
+          "time": "12:00",
+          "note": "網路報名（11/02 09:00 起）"
+        },
+        {
+          "id": "74c02fc4-2a90-4185-9bb2-ec7676624142",
+          "kind": "pay",
+          "date": "2026-11-10",
+          "end": "",
+          "time": "15:00",
+          "note": "繳費時間（11/02 09:00 起）"
+        },
+        {
+          "id": "5fa68bda-50d5-4d0f-84d9-286ff569e0f8",
+          "kind": "upload",
+          "date": "2026-11-10",
+          "end": "",
+          "time": "17:00",
+          "note": "繳件截止"
+        },
+        {
+          "id": "c4112d4c-5447-400a-ad75-1ab85d615f8b",
+          "kind": "stage1",
+          "date": "2026-12-08",
+          "end": "",
+          "time": "",
+          "note": "面試名單公布"
+        },
+        {
+          "id": "f063606d-e834-4d13-b48b-1ec62f4ebe27",
+          "kind": "interview",
+          "date": "2026-12-12",
+          "end": "",
+          "time": "",
+          "note": "面試時間"
+        },
+        {
+          "id": "7db56560-ec58-4d4f-8290-2cd45ce561c2",
+          "kind": "release",
+          "date": "2026-12-22",
+          "end": "",
+          "time": "14:00",
+          "note": "錄取放榜"
+        },
+        {
+          "id": "5e75eef3-e64a-4672-b418-f22d3d4c7593",
+          "kind": "confirm",
+          "date": "2027-01-04",
+          "end": "",
+          "time": "17:00",
+          "note": "正取生報到期限（12/22 14:00 起）"
+        },
+        {
+          "id": "47dfe02a-9c8a-4780-82bb-ffc62cc77feb",
+          "kind": "wait",
+          "date": "2026-12-22",
+          "end": "2027-01-04",
+          "time": "14:00",
+          "note": "備取生遞補意願調查期限"
+        },
+        {
+          "id": "51415211-80eb-49b1-a26a-1c21e5e11fd8",
+          "kind": "review",
+          "date": "2026-12-29",
+          "end": "",
+          "time": "",
+          "note": "成績複查申請截止"
+        },
+        {
+          "id": "e3ef0ff2-b8b1-4dc8-a2a1-f83adadd0c82",
+          "kind": "giveup",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "12:00",
+          "note": "已報到生放棄截止"
+        },
+        {
+          "id": "83439b1f-54c4-4156-87ff-2b856ea1c1ed",
+          "kind": "wait",
+          "date": "2027-03-03",
+          "end": "",
+          "time": "",
+          "note": "備取生遞補作業截止"
+        }
+      ],
+      "docs": [
+        {
+          "id": "ea46133d-179a-4d64-a433-7dcd4d81a051",
+          "name": "自傳／個人陳述",
+          "done": false
+        },
+        {
+          "id": "d7784d5f-cfdc-417d-bb2b-9a135ecd8caa",
+          "name": "讀書計畫",
+          "done": false
+        },
+        {
+          "id": "d310052d-6f74-4393-ad3d-6ab6136e7575",
+          "name": "特殊表現證明文件",
+          "done": false
+        },
+        {
+          "id": "2a54e29e-cffa-4a0b-b5d2-7b64c00c877c",
+          "name": "系所指定其他資料",
+          "done": false
+        }
+      ],
+      "notes": "甄選：資料審查 40%、面試 60%",
+      "status": "prep",
+      "waitNo": null,
+      "waitNow": null,
+      "choice": "",
+      "confirmDone": false,
+      "giveupDone": false,
+      "prep": "",
+      "asked": "",
+      "example": true,
+      "createdAt": 1793001602000
+    }
+  ],
+  "profile": {}
+}

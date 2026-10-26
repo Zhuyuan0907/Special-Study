@@ -1,0 +1,19 @@
+{
+  "name": "special-study-tracker",
+  "version": "1.0.0",
+  "description": "大學特殊選才個人紀錄：投遞學校、時程、面試、放榜，以及各校簡章全文搜尋",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "build-data": "node scripts/build-data.mjs",
+    "build-data:offline": "node scripts/build-data.mjs --offline"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "4.10.38"
+  }
+}
