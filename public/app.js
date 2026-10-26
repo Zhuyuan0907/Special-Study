@@ -11,6 +11,7 @@ const STATUS = {
   waitlist: {label: '備取', tone: 'warn'},
   rejected: {label: '未錄取', tone: 'muted'},
   out: {label: '一階未通過', tone: 'muted'},
+  skipped: {label: '沒有報名', tone: 'muted'},
 };
 const KINDS = {
   reg: {label: '報名截止', cat: 'k-due'},
@@ -49,7 +50,7 @@ const isKey = k => typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k);
 const diffDays = k => Math.round((parseKey(k) - parseKey(todayKey())) / 864e5);
 const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return toKey(d); };
 const md = k => { const d = parseKey(k); return `${d.getMonth() + 1}/${pad(d.getDate())}`; };
-const fmtDate = k => { const d = parseKey(k); return (d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + '/' : '') + md(k); };
+const fmtDate = k => { const d = parseKey(k); return d.getFullYear() !== new Date().getFullYear() ? `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}` : md(k); };
 const wd = k => '週' + '日一二三四五六'[parseKey(k).getDay()];
 const cdText = n => n === 0 ? '今天' : n === 1 ? '明天' : n === 2 ? '後天' : n > 0 ? `${n} 天後` : `${-n} 天前`;
 const cdClass = n => n < 0 ? '' : n <= 1 ? 'now' : n <= 5 ? 'soon' : '';
@@ -86,7 +87,7 @@ function toast(msg) {
 
 /* ---------- state ---------- */
 const S = {apps: [], profile: {}};
-const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', terms: {synonyms: {}, aliases: {}}};
+const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', terms: {synonyms: {}, aliases: {}}, links: {}};
 const t0 = new Date();
 const ui = {cal: {y: t0.getFullYear(), m: t0.getMonth()}, day: null, q: '', region: '', open: false, nopf: false, norl: false, sort: 'smart', all: false, limit: 40, search: null, searching: false};
 
@@ -158,7 +159,8 @@ function alerts() {
   for (const c of clashes()) out.push({crit: true, text: `${fmtDate(c.date)} 面試撞期：${c.evs.map(e => appName(e.app)).join('、')}`});
   for (const a of S.apps) {
     const reg = firstDate(a, ['reg']);
-    if (a.status === 'prep' && reg && reg.date >= t && diffDays(reg.date) <= 5) out.push({crit: diffDays(reg.date) <= 1, text: `${appName(a)} 報名${diffDays(reg.date) === 0 ? '今天' : ' ' + cdText(diffDays(reg.date))}截止，還沒報名`});
+    if (a.status === 'prep' && reg && reg.date >= t && diffDays(reg.date) <= 5) out.push({crit: diffDays(reg.date) <= 1, text: `${appName(a)} 報名${diffDays(reg.date) === 0 ? '今天' : ' ' + cdText(diffDays(reg.date))}${reg.time ? ' ' + reg.time : ''} 截止，還沒報名`});
+    if (a.status === 'prep' && reg && reg.date < t && diffDays(reg.date) >= -14) out.push({text: `${appName(a)} 報名已在 ${fmtDate(reg.date)} 截止，還是「準備中」。點進去確認有沒有報名`});
     const left = (a.docs || []).filter(d => !d.done).length;
     const due = firstDate(a, ['upload', 'letter']) || reg;
     if (left && due && due.date >= t && diffDays(due.date) <= 7 && ['prep', 'applied'].includes(a.status)) out.push({text: `${appName(a)} 還有 ${left} 項備審沒完成，${fmtDate(due.date)} 截止`});
@@ -175,7 +177,13 @@ function alerts() {
 }
 
 /* ---------- program helpers ---------- */
-const progReg = p => { const r = (p.ev || []).find(e => e[0] === 'reg'); return r ? {start: r[1], end: r[2] || r[1]} : null; };
+const progReg = p => { const r = (p.ev || []).find(e => e[0] === 'reg'); return r ? {start: r[1], end: r[2] || r[1], time: r[4] || (!r[2] ? r[3] : '') || ''} : null; };
+// 各校招生網與報名系統（data/school-links.json），用學校名稱找。
+function schoolLinks(name) {
+  const s = P.schools.find(x => x.name === name);
+  return s && P.links[s.code] ? P.links[s.code] : null;
+}
+const extLink = (href, label) => `<a class="btn sm ext" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
 const pev = (p, kinds) => (p.ev || []).find(e => kinds.includes(e[0])) || null;
 const needsLetter = p => !!p.rl && /^[暗明]/.test(p.rl) && !/非必繳|選繳/.test(p.rl);
 const isTest = n => /筆試|術科|實作|測驗|展演|專長/.test(n);
@@ -222,8 +230,8 @@ function regText(p) {
   const r = p._reg, t = todayKey();
   if (!r) return '';
   if (t < r.start) return `<span class="st-soon">報名 ${fmtDate(r.start)} 開始</span>`;
-  if (t <= r.end) { const n = diffDays(r.end); return `<span class="st-open">報名中，${n === 0 ? '今天' : `剩 ${n} 天`}（${fmtDate(r.end)} 截止）</span>`; }
-  return `<span>報名已截止（${fmtDate(r.end)}）</span>`;
+  if (t <= r.end) { const n = diffDays(r.end); return `<span class="st-open">報名中，${n === 0 ? '今天' : `剩 ${n} 天`}（${fmtDate(r.end)}${r.time ? ' ' + r.time : ''} 截止）</span>`; }
+  return `<span>報名已截止（${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}）</span>`;
 }
 function weightText(p) {
   const its = (p.it || []).filter(i => i[0]);
@@ -276,7 +284,7 @@ function renderTop() {
       <span class="next-what"><span class="tag ${KINDS[next.kind].cat}">${KINDS[next.kind].label}${ongoing ? '（進行中）' : ''}</span><b>${esc(appName(next.app))}</b><span>${fmtDate(f)}（${wd(f)}）${next.time ? ' ' + esc(next.time) : ''}</span></span>`;
   }
   const c = k => S.apps.filter(a => a.status === k).length;
-  const items = [['學校', S.apps.length, ''], ['已報名', S.apps.filter(a => a.status !== 'prep').length, ''], ['待面試', c('applied') + c('interview'), ''], ['正取', c('admitted'), 'ok'], ['備取', c('waitlist'), 'warn']];
+  const items = [['學校', S.apps.length, ''], ['已報名', S.apps.filter(a => !['prep', 'skipped'].includes(a.status)).length, ''], ['待面試', c('applied') + c('interview'), ''], ['正取', c('admitted'), 'ok'], ['備取', c('waitlist'), 'warn']];
   $('#stats').innerHTML = items.map(([k, v, cls]) => `<div class="stat ${cls}"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 }
 
@@ -291,7 +299,7 @@ function renderSchools() {
     list.innerHTML = `<li class="empty"><b>還沒有學校</b><span>按上面的「新增學校」，<br>選學校和科系，簡章日期會自動帶入。</span></li>`;
     return;
   }
-  const order = {admitted: 0, waitlist: 1, interview: 2, waiting: 3, applied: 4, prep: 5, rejected: 6, out: 7};
+  const order = {admitted: 0, waitlist: 1, interview: 2, waiting: 3, applied: 4, prep: 5, rejected: 6, out: 7, skipped: 8};
   const nextOf = a => upcoming(allEvents().filter(ev => ev.app.id === a.id))[0];
   const apps = [...S.apps].sort((a, b) => {
     const na = nextOf(a), nb = nextOf(b);
@@ -304,7 +312,7 @@ function renderSchools() {
     let nextHtml = '<span>沒有未來的日期</span>';
     if (nx) {
       const f = focusDate(nx), n = diffDays(f);
-      nextHtml = `<span class="tag ${KINDS[nx.kind].cat}">${KINDS[nx.kind].label}</span><span>${fmtDate(f)}</span><span class="cd ${cdClass(n)}">${nx.date < todayKey() ? '進行中' : cdText(n)}</span>`;
+      nextHtml = `<span class="tag ${KINDS[nx.kind].cat}">${KINDS[nx.kind].label}</span><span>${fmtDate(f)}${nx.time ? ' ' + esc(nx.time) : ''}</span><span class="cd ${cdClass(n)}">${nx.date < todayKey() ? '進行中' : cdText(n)}</span>`;
     }
     return `<li><button class="school" type="button" data-app="${esc(a.id)}">
       <span class="school-top"><span class="school-name">${esc(a.school)}</span><span class="pill ${st.tone}">${label}</span></span>
@@ -360,13 +368,31 @@ function renderTimeline() {
   ol.innerHTML = list.map(ev => {
     const ongoing = ev.date < t && ev.last >= t, f = ui.day || focusDate(ev), n = diffDays(f);
     const tip = [KINDS[ev.kind].label, appName(ev.app), ev.end ? `${fmtDate(ev.date)}–${fmtDate(ev.end)}` : fmtDate(ev.date), ev.time, ev.note].filter(Boolean).join('｜');
-    return `<li class="ev ${ongoing ? 'ongoing' : ''}" data-app="${esc(ev.app.id)}" title="${esc(tip)}" tabindex="0">
-      <span class="ev-date"><b>${fmtDate(ev.date)}</b><span>${wd(ev.date)}</span></span>
+    const deadline = DEADLINE_KINDS.has(ev.kind);
+    const rowCls = !ongoing && deadline && n >= 0 && n <= 1 ? 'now-row' : !ongoing && deadline && n <= 3 && n >= 0 ? 'soon-row' : '';
+    return `<li class="ev ${ongoing ? 'ongoing' : ''} ${rowCls}" data-app="${esc(ev.app.id)}" title="${esc(tip)}" tabindex="0">
+      ${evDateHtml(ev, ongoing)}
       <span class="tag ${KINDS[ev.kind].cat}">${KINDS[ev.kind].label}</span>
-      <span class="ev-title">${esc(ev.app.school)} <span>${esc(ev.app.dept || '')}</span></span>
-      <span class="cd ${cdClass(n)}">${ongoing ? `到 ${fmtDate(ev.last)}` : cdText(n)}</span>
+      <span class="ev-title">${esc(ev.app.school)} <span>${esc(splitName(ev.app.dept || '').main)}</span></span>
+      ${countdownHtml(ev, n, ongoing)}
     </li>`;
   }).join('');
+}
+// 日期欄：跨年先標年份；截止類的日期把時間放大，因為每間學校的截止時間不一樣。
+function evDateHtml(ev, ongoing) {
+  const d = parseKey(ev.date), yr = d.getFullYear() !== new Date().getFullYear() ? `<span class="yr">${d.getFullYear()} 年</span>` : '';
+  const deadline = DEADLINE_KINDS.has(ev.kind);
+  const time = ev.time ? `<span class="${deadline ? 'tm' : ''}">${esc(ev.time)}${deadline ? ' 截止' : ''}</span>` : deadline ? '<span>時間請看簡章</span>' : '';
+  return `<span class="ev-date">${yr}<b>${md(ev.date)}${ongoing ? ' 起' : ''}（${wd(ev.date).slice(1)}）</b>${time}</span>`;
+}
+function countdownHtml(ev, n, ongoing) {
+  if (ongoing) return `<span class="cd">到 ${fmtDate(ev.last)}</span>`;
+  if (n === 0 && /^\d{2}:\d{2}$/.test(ev.time || '')) {
+    const [h, m] = ev.time.split(':').map(Number), left = (new Date(new Date().setHours(h, m, 0, 0)) - Date.now()) / 36e5;
+    if (left < 0) return `<span class="cd">今天<small>${DEADLINE_KINDS.has(ev.kind) ? '已截止' : '已過'}</small></span>`;
+    return `<span class="cd now">今天<small>還有 ${left < 1 ? `${Math.max(1, Math.round(left * 60))} 分鐘` : `${Math.ceil(left)} 小時`}</small></span>`;
+  }
+  return `<span class="cd ${cdClass(n)}">${cdText(n)}</span>`;
 }
 function gcalUrl(ev) {
   const ymd = k => k.replace(/-/g, '');
@@ -537,7 +563,8 @@ async function openProgram(pid) {
   renderProgActions(p);
   const t = todayKey();
   const events = (p.ev || []).map(([k, sd, ed, st, et, name]) => `<li class="${(ed || sd) < t ? 'past' : ''}"><span><span class="tag ${(KINDS[k] || KINDS.other).cat}">${esc(name)}</span></span><span class="when">${fmtDate(sd)}${st ? ' ' + st : ''}${ed ? ` – ${fmtDate(ed)}${et ? ' ' + et : ''}` : ''}</span></li>`).join('');
-  const links = [p.u && [p.u, '系所網站／簡章連結'], p.du && [p.du, '學系網站'], [`https://sta-tw.org/bochures/program/${encodeURIComponent(p.i)}/`, '特殊選才網']].filter(Boolean).filter(([u]) => /^https?:\/\//.test(u));
+  const L = schoolLinks(p.school) || {};
+  const links = [L.apply && [L.apply, '網路報名系統'], L.adm && [L.adm, '學校招生網'], p.u && [p.u, '系所網站／簡章連結'], p.du && [p.du, '學系網站'], [`https://sta-tw.org/bochures/program/${encodeURIComponent(p.i)}/`, '特殊選才網']].filter(Boolean).filter(([u]) => /^https?:\/\//.test(u));
   $('#p-facts').innerHTML = `
     <div class="p-section">${qualHtml(p, re)}</div>
     ${p.deb || p.deo ? `<div class="p-section"><h3>不同教育資歷</h3><p>${esc([p.deb, p.deo].filter(Boolean).join(' '))}</p></div>` : ''}
@@ -712,7 +739,13 @@ function confirmHtml(p) {
   const t = todayKey(), src = appFromProgram(p), r = p._reg;
   const closed = r && r.end < t;
   const key = src.dates.filter(d => ['reg', 'letter', 'upload', 'stage1', 'interview', 'exam', 'release', 'confirm'].includes(d.kind)).slice(0, 6);
-  const statusText = !r ? '' : t < r.start ? `<span class="pill info">${fmtDate(r.start)} 開始報名</span>` : !closed ? `<span class="pill ok">報名中，${diffDays(r.end) === 0 ? '今天截止' : `剩 ${diffDays(r.end)} 天`}</span>` : `<span class="pill">報名已在 ${fmtDate(r.end)} 截止</span>`;
+  const endText = `${fmtDate(r ? r.end : '')}${r && r.time ? ' ' + r.time : ''}`;
+  const statusText = !r ? '' : t < r.start ? `<span class="pill info">${fmtDate(r.start)} 開始報名</span>` : !closed ? `<span class="pill ok">報名中，${diffDays(r.end) === 0 ? '今天' : `剩 ${diffDays(r.end)} 天`}，${endText} 截止</span>` : `<span class="pill">報名已在 ${endText} 截止</span>`;
+  const sameSchool = S.apps.filter(a => a.school === p.school && a.status !== 'skipped');
+  const mx = parseInt(p.mx, 10);
+  const warns = [];
+  if (Number.isFinite(mx) && sameSchool.length >= mx) warns.push(`<b>${esc(p.school)}規定同校最多報 ${mx} 個系組</b>，你已經加了 ${sameSchool.length} 個（${sameSchool.map(a => esc(splitName(a.dept || '').main)).join('、')}）。再加這個就超過了，請確認簡章。`);
+  if (closed) warns.push(`這個系的報名已在 <b>${endText}</b> 截止。已經報名的話，請勾下面的「我已經報名這個系了」；沒報名的話，加進來只能當參考。`);
   return `<div class="add-step">
     <div class="add-lead"><button class="back" type="button" data-back="2">‹ 換系組</button></div>
     <div class="confirm-scroll scroll">
@@ -720,6 +753,7 @@ function confirmHtml(p) {
         <div class="pick-main"><span class="pick-title">${esc(p.school)} ${esc(p._main)}${qualPills(p._quals)}</span><span class="pick-sub">${[p.q != null && `招生名額 ${p.q} 名`, p.fee && `報名費 ${esc(p.fee)}`].filter(Boolean).join('・')}</span></div>
         ${statusText}
       </div>
+      ${warns.map(w => `<div class="warn-box">${w}</div>`).join('')}
       <div class="confirm-grid">
         <section class="confirm-box">
           <h3>按「加入」之後，會幫你建立</h3>
@@ -816,6 +850,8 @@ function fillInfo() {
 function renderAppHead() {
   $('#a-title').textContent = cur.school || '手動新增學校';
   $('#a-sub').textContent = cur.dept || (cur.school ? '' : '先在「基本資料」填學校和學系，填好就會自動儲存');
+  const L = schoolLinks(cur.school) || {}, p = cur.programId && P.byId.get(cur.programId);
+  $('#a-links').innerHTML = [L.apply && extLink(L.apply, '網路報名系統'), L.adm && extLink(L.adm, '學校招生網'), p && extLink(`/data/brochures/pdf/${p.code}.pdf`, '簡章 PDF'), /^https?:\/\//.test(cur.url || '') && extLink(cur.url, '系所網站')].filter(Boolean).join('');
 }
 function setSaveState(id, state) {
   if (!cur || cur.id !== id) return;
@@ -850,13 +886,14 @@ function renderTabCounts() {
 }
 
 const STEPS = [['prep', '準備中'], ['applied', '已報名'], ['interview', '通過一階'], ['waiting', '已面試'], ['result', '放榜結果']];
-function stepIndex(st) { return {prep: 0, applied: 1, interview: 2, waiting: 3, admitted: 4, waitlist: 4, rejected: 4, out: 2}[st] ?? 0; }
+function stepIndex(st) { return {prep: 0, skipped: 0, applied: 1, interview: 2, waiting: 3, admitted: 4, waitlist: 4, rejected: 4, out: 2}[st] ?? 0; }
 function renderStepper() {
   const idx = stepIndex(cur.status);
   const resultLabel = {admitted: '正取', waitlist: cur.waitNo ? `備取 ${cur.waitNo}` : '備取', rejected: '未錄取'}[cur.status];
   $('#a-stepper').innerHTML = STEPS.map(([key, label], i) => {
     let cls = i < idx ? 'done' : i === idx ? 'now' : '';
     let text = label;
+    if (i === 0 && cur.status === 'skipped') { cls = 'now bad'; text = '沒有報名'; }
     if (i === 2 && cur.status === 'out') { cls = 'now bad'; text = '一階未通過'; }
     if (i === 4 && resultLabel) { text = resultLabel; cls += cur.status === 'admitted' ? ' ok' : cur.status === 'waitlist' ? ' warn' : ' bad'; }
     return `<li class="${cls}"><button type="button" data-step="${key}" aria-current="${i === idx ? 'step' : 'false'}">${text}</button></li>`;
@@ -866,16 +903,20 @@ function renderStepper() {
 function nextStep(a) {
   const d = kinds => firstDate(a, kinds);
   const t = todayKey();
-  const when = x => `${fmtDate(x.date)}（${cdText(diffDays(x.date))}）`;
+  const when = x => `${fmtDate(x.date)}${x.time ? ' ' + x.time : ''}（${cdText(diffDays(x.date))}）`;
   const left = (a.docs || []).filter(x => !x.done).length;
+  const L = schoolLinks(a.school) || {};
   switch (a.status) {
     case 'prep': {
       const reg = d(['reg']);
-      const act = [{label: '我報名了', set: {status: 'applied'}, primary: true}];
+      const go = L.apply ? [{label: '前往報名系統', href: L.apply}] : L.adm ? [{label: '學校招生網', href: L.adm}] : [];
+      const act = [...go, {label: '我報名了', set: {status: 'applied'}, primary: true}];
       if (reg && reg.date >= t) return {text: `在 ${when(reg)} 前完成網路報名${left ? `，還有 ${left} 項備審要準備` : ''}。報名完按「我報名了」。`, actions: act};
-      if (reg) return {text: `這個系的報名已在 ${fmtDate(reg.date)} 截止。如果你已經報名，按「我報名了」。`, actions: act};
+      if (reg) return {text: `這個系的報名已在 ${when(reg).replace(/（.*）/, '')} 截止。報了就按「我報名了」；沒報就按「沒有報名」，這筆會留著但不再提醒。`, actions: [{label: '我報名了', set: {status: 'applied'}, primary: true}, {label: '沒有報名', set: {status: 'skipped'}}]};
       return {text: '確認簡章的報名日期，報名完按「我報名了」。', actions: act};
     }
+    case 'skipped':
+      return {tone: 'calm', text: '這間沒有報名，不會再提醒。要留著當紀錄也可以，或到「基本資料」刪除。', actions: [{label: '其實有報名', set: {status: 'applied'}}]};
     case 'applied': {
       const up = d(['upload', 'letter']), s1 = d(['stage1']), iv = d(['interview', 'exam', 'window']);
       if (left && up && up.date >= t) return {text: `還有 ${left} 項備審沒完成，${when(up)} 截止。到「備審資料」打勾追蹤。`, actions: [{label: '打開備審資料', tab: 'docs', primary: true}]};
@@ -917,7 +958,7 @@ function renderNextStep() {
     <span class="next-actions">
       ${n.wait ? `<label class="check">備取第 <input type="number" min="1" id="a-wait" value="${esc(cur.waitNo ?? '')}" aria-label="備取名次"> 名</label>` : ''}
       ${n.check ? `<label class="check"><input type="checkbox" data-check="${n.check[0]}" ${cur[n.check[0]] ? 'checked' : ''}>${n.check[1]}</label>` : ''}
-      ${n.actions.map((x, i) => `<button class="btn sm ${x.primary ? 'primary' : ''}" type="button" data-act="${i}">${x.label}</button>`).join('')}
+      ${n.actions.map((x, i) => x.href ? extLink(x.href, x.label) : `<button class="btn sm ${x.primary ? 'primary' : ''}" type="button" data-act="${i}">${x.label}</button>`).join('')}
     </span>`;
 }
 function applyStatus(patch) {
@@ -1108,7 +1149,12 @@ dlgAdd.addEventListener('close', () => { if (wiz.addedId) flashSchool(wiz.addedI
 /* ---------- wiring: main ---------- */
 $('#btn-add').addEventListener('click', () => openWizard());
 $('#btn-guide').addEventListener('click', () => $('#dlg-guide').showModal());
-$('#btn-backup').addEventListener('click', () => $('#dlg-backup').showModal());
+$('#btn-backup').addEventListener('click', () => { $('#ics-url').textContent = `webcal://${location.host}/api/calendar.ics`; $('#dlg-backup').showModal(); });
+$('#ics-copy').addEventListener('click', async () => {
+  const url = $('#ics-url').textContent;
+  try { await navigator.clipboard.writeText(url); toast('已複製，到行事曆 App 貼上就能訂閱'); }
+  catch { const r = document.createRange(); r.selectNodeContents($('#ics-url')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('請按 ⌘C 複製反白的網址'); }
+});
 $$('dialog').forEach(d => {
   d.addEventListener('click', e => { if (e.target === d) d.close(); });
   $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
@@ -1205,8 +1251,9 @@ async function loadRecords() {
   renderMain();
 }
 async function loadPrograms() {
-  const [d, terms] = await Promise.all([request('GET', '/data/programs.json'), request('GET', '/data/search-terms.json').catch(() => null)]);
+  const [d, terms, links] = await Promise.all([request('GET', '/data/programs.json'), request('GET', '/data/search-terms.json').catch(() => null), request('GET', '/data/school-links.json').catch(() => null)]);
   if (terms) P.terms = {synonyms: terms.synonyms || {}, aliases: terms.aliases || {}};
+  if (links) P.links = links.schools || {};
   P.schools = d.schools;
   P.fetched = d.fetched;
   P.programs = d.programs.map(p => {

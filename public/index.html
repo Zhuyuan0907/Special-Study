@@ -18,7 +18,7 @@
   <dl class="stats" id="stats"></dl>
   <div class="top-actions">
     <button class="btn" type="button" id="btn-guide">特選須知</button>
-    <button class="btn" type="button" id="btn-backup">備份與匯出</button>
+    <button class="btn" type="button" id="btn-backup">行事曆・備份</button>
   </div>
 </header>
 
@@ -104,6 +104,7 @@
     <div class="head-text">
       <h2 id="a-title"></h2>
       <p id="a-sub"></p>
+      <div class="head-links" id="a-links"></div>
     </div>
     <span class="save-state" id="a-save" aria-live="polite"></span>
     <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
@@ -230,10 +231,14 @@
 <!-- 備份與匯出 -->
 <dialog id="dlg-backup" class="modal modal-xs" aria-labelledby="b-title">
   <div class="modal-head">
-    <div class="head-text"><h2 id="b-title">備份與匯出</h2><p>紀錄存在伺服器的 data/records.json</p></div>
+    <div class="head-text"><h2 id="b-title">行事曆與備份</h2><p>紀錄存在伺服器的 data/records.json</p></div>
     <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
   </div>
   <div class="modal-body stack">
+    <div class="action-row col">
+      <div><b>訂閱到手機和電腦的行事曆</b><p>在 Mac 的「行事曆」或 iPhone 的「設定 → 行事曆 → 帳號 → 加入訂閱的行事曆」貼上這個網址。所有日期會自動同步，截止前一天會提醒，有時間的截止另外在 3 小時前提醒。</p></div>
+      <div class="ics-row"><code class="ics-url" id="ics-url"></code><button class="btn sm" type="button" id="ics-copy">複製網址</button></div>
+    </div>
     <div class="action-row"><div><b>下載備份</b><p>把所有紀錄存成一個 JSON 檔</p></div><a class="btn" href="/api/export" download>下載</a></div>
     <div class="action-row"><div><b>從備份還原</b><p>相同的學校會用備份檔的內容覆蓋</p></div><button class="btn" type="button" id="b-import">選擇檔案</button></div>
     <div class="action-row"><div><b>匯出行事曆</b><p>Google 日曆可匯入的 CSV（設定 → 匯入）</p></div><button class="btn" type="button" id="b-csv">下載 CSV</button></div>
