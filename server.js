@@ -192,6 +192,43 @@ function search(q) {
   return {tokens, programs: results, general};
 }
 
+/* ---------- 行事曆訂閱（iCalendar） ---------- */
+const KIND_LABEL = {reg: '報名截止', pay: '繳費截止', upload: '資料上傳截止', letter: '推薦函截止', stage1: '面試名單公布', window: '甄試期間', interview: '面試', exam: '筆試／術科', release: '放榜', review: '成績複查', confirm: '報到截止', giveup: '放棄截止', wait: '備取遞補', other: '其他'};
+const DEADLINE_KINDS = new Set(['reg', 'pay', 'upload', 'letter', 'confirm', 'giveup', 'review']);
+const icsText = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const icsDate = k => k.replace(/-/g, '');
+const icsFold = line => { const out = []; let s = line; while (Buffer.byteLength(s) > 70) { let cut = 70; while (Buffer.byteLength(s.slice(0, cut)) > 70) cut--; out.push(s.slice(0, cut)); s = ' ' + s.slice(cut); } out.push(s); return out.join('\r\n'); };
+function addDaysKey(k, n) { const d = new Date(k + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function buildIcs() {
+  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//special-study//我的特選紀錄//ZH', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:我的特選紀錄', 'X-WR-TIMEZONE:Asia/Taipei',
+    'BEGIN:VTIMEZONE', 'TZID:Asia/Taipei', 'BEGIN:STANDARD', 'DTSTART:19700101T000000', 'TZOFFSETFROM:+0800', 'TZOFFSETTO:+0800', 'TZNAME:CST', 'END:STANDARD', 'END:VTIMEZONE'];
+  for (const a of records.apps) {
+    for (const d of a.dates || []) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) continue;
+      const label = KIND_LABEL[d.kind] || KIND_LABEL.other;
+      const title = `${a.school}${a.dept ? ' ' + a.dept : ''}｜${label}`;
+      const timed = /^\d{2}:\d{2}$/.test(d.time || '');
+      const last = /^\d{4}-\d{2}-\d{2}$/.test(d.end || '') && d.end > d.date ? d.end : d.date;
+      lines.push('BEGIN:VEVENT', `UID:${a.id}-${d.id || icsDate(d.date)}@special-study`, `DTSTAMP:${now}`, `SUMMARY:${icsText(title)}`);
+      if (timed) {
+        const [h, m] = d.time.split(':').map(Number);
+        const hh = String(h).padStart(2, '0'), mm = String(m).padStart(2, '0');
+        lines.push(`DTSTART;TZID=Asia/Taipei:${icsDate(d.date)}T${hh}${mm}00`, `DTEND;TZID=Asia/Taipei:${icsDate(d.date)}T${String(Math.min(h + 1, 23)).padStart(2, '0')}${mm}00`);
+      } else {
+        lines.push(`DTSTART;VALUE=DATE:${icsDate(d.date)}`, `DTEND;VALUE=DATE:${icsDate(addDaysKey(last, 1))}`);
+      }
+      if (d.note) lines.push(`DESCRIPTION:${icsText(d.note)}`);
+      // 截止類的日期：前一天提醒一次；有時間的再於三小時前提醒一次。
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(title)}`, 'TRIGGER:-P1D', 'END:VALARM');
+      if (timed && DEADLINE_KINDS.has(d.kind)) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(title)}`, 'TRIGGER:-PT3H', 'END:VALARM');
+      lines.push('END:VEVENT');
+    }
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+
 /* ---------- helpers ---------- */
 function send(res, status, body, headers = {}) {
   res.writeHead(status, {'Cache-Control': 'no-store', ...headers});
@@ -301,6 +338,10 @@ async function api(req, res, url) {
     if (isPlainObject(body.profile)) records.profile = body.profile;
     await saveRecords();
     return sendJson(req, res, 200, {imported: n});
+  }
+
+  if (resource === 'calendar.ics' && req.method === 'GET') {
+    return send(res, 200, buildIcs(), {'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="special-study.ics"'});
   }
 
   if (resource === 'export' && req.method === 'GET') {
