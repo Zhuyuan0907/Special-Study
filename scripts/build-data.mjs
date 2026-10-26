@@ -60,7 +60,18 @@ async function fetchBrochures(codes) {
 
 /* ---------- 2. text extraction ---------- */
 const CJK = '\\u3000-\\u303f\\u3400-\\u9fff\\uff00-\\uffef';
-const cleanPage = s => s.replace(new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g'), '$1').replace(/[ \t]{2,}/g, ' ');
+// PDF 表格的直排標題常被抽成一行一個字（考／試／項／目）：連續三行以上的單字就接回一行。
+function joinSingles(text) {
+  const out = [];
+  let run = [];
+  const flush = () => { if (run.length >= 3) out.push(run.join('')); else out.push(...run); run = []; };
+  for (const line of text.split('\n')) {
+    if (/^[㐀-鿿]$/.test(line.trim())) run.push(line.trim()); else { flush(); out.push(line); }
+  }
+  flush();
+  return out.join('\n');
+}
+const cleanPage = s => joinSingles(s.replace(new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g'), '$1').replace(/[ \t]{2,}/g, ' '));
 async function extractText(code, school) {
   const pdfFile = path.join(PDF_DIR, `${code}.pdf`);
   const outFile = path.join(TEXT_DIR, `${code}.json`);
@@ -94,7 +105,8 @@ async function extractText(code, school) {
 /* ---------- 3. compact program records ---------- */
 const EMPTY = new Set(['', '-', '未公告', '尚未公告', '尚未公布', '無資料', '#N/A', '#VALUE!', '#DIV/0!', 'N/A', '待統計']);
 const val = v => { const s = v == null ? '' : String(v).trim(); return EMPTY.has(s) ? '' : s; };
-const tm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(val(v)); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : ''; };
+// 來源資料裡的 00:00 不可靠（逢甲實際是 18:00、靜宜沒寫時間、中教大是 24 時），一律視為「時間未知」。
+const tm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(val(v)); if (!m) return ''; const t = `${m[1].padStart(2, '0')}:${m[2]}`; return t === '00:00' ? '' : t; };
 const dt = v => /^\d{4}-\d{2}-\d{2}$/.test(val(v)) ? val(v) : '';
 function kindOf(n) {
   if (n.includes('推薦函')) return 'letter';
