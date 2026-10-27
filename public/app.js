@@ -191,6 +191,16 @@ const needsLetter = p => !!p.rl && /^[暗明]/.test(p.rl) && !/非必繳|選繳/
 const isTest = n => /筆試|術科|實作|測驗|展演|專長/.test(n);
 const itemClass = n => isTest(n) ? 'test' : /面試|口試/.test(n) ? 'iv' : /審查|書面|書審|資料/.test(n) ? 'doc' : 'other';
 const rlText = rl => rl === 'N' ? '不需要' : rl.replace(/^暗/, '暗推').replace(/^明/, '明推');
+// 簡章的繳交資料說明很長，清單只留名稱：「自傳(含學習歷程描述…)」→「自傳」。
+function shortDoc(t) {
+  let cut = -1;
+  for (const m of t.matchAll(/[（(：:，,]/g)) if (m.index >= 4) { cut = m.index; break; }
+  let n = cut > 0 ? t.slice(0, cut) : t;
+  n = n.replace(/^(現為|依|本系|本校)/, '').trim();
+  if (n.length > 28) n = n.slice(0, 28) + '…';
+  return n || t.slice(0, 28);
+}
+const docListHtml = p => (p.docs || []).length ? `<div class="p-section"><h3>簡章要求繳交的資料<span class="src">自動節錄，請對照簡章</span></h3><ol class="doc-req">${p.docs.map(d => `<li>${esc(d)}</li>`).join('')}</ol></div>` : '';
 const mine = pid => S.apps.find(a => a.programId === pid);
 const regKey = p => { const t = todayKey(); return !p._reg ? '9' : p._reg.end >= t ? '0' + p._reg.end : '1' + p.i; };
 // 「資安外加 資訊工程學系」→ 學系名稱「資訊工程學系」＋ 招生組別「資安外加」
@@ -259,10 +269,10 @@ function appFromProgram(p) {
     if (/筆試|測驗/.test(n)) m.add('筆試');
     if (/術科|實作|展演|專長/.test(n)) m.add('實作／術科');
   }
-  const docs = ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件'];
-  if (p.pf === 'Y') docs.push('作品集' + (p.pfd ? `（${fmtDate(p.pfd)} 前）` : ''));
-  if (p.rl && /^[暗明]/.test(p.rl)) docs.push(`推薦信（${rlText(p.rl)}）`);
-  docs.push('系所指定其他資料');
+  // 簡章有列「指定繳交資料」就用簡章的清單，否則用通用清單。
+  const docs = (p.docs || []).length ? p.docs.map(shortDoc) : ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件', '系所指定其他資料'];
+  if (p.pf === 'Y' && !docs.some(x => /作品/.test(x))) docs.push('作品集' + (p.pfd ? `（${fmtDate(p.pfd)} 前）` : ''));
+  if (p.rl && /^[暗明]/.test(p.rl) && !docs.some(x => /推薦/.test(x))) docs.push(`推薦信（${rlText(p.rl)}）`);
   const its = (p.it || []).map(([n, w]) => n + (w != null ? ` ${w}%` : '')).join('、');
   return {
     id: uid(), school: p.school, dept: p.n, programId: p.i, status: 'prep', methods: METHODS.filter(x => m.has(x)),
@@ -571,6 +581,7 @@ async function openProgram(pid) {
     <div class="p-section">${qualHtml(p, re)}</div>
     ${p.deb || p.deo ? `<div class="p-section"><h3>不同教育資歷</h3><p>${esc([p.deb, p.deo].filter(Boolean).join(' '))}</p></div>` : ''}
     <div class="p-section"><h3>甄選方式</h3>${weightHtml(p)}</div>
+    ${docListHtml(p)}
     ${factsHtml(p)}
     ${events ? `<div class="p-section"><h3>這個系的時程</h3><ul class="p-events">${events}</ul></div>` : ''}
     ${p.cw ? `<div class="p-section"><h3>報到與遞補</h3><p>${esc(p.cw)}</p></div>` : ''}
@@ -1000,6 +1011,7 @@ function renderBrochureTab() {
     ? `<div class="brochure-summary">
         <div class="p-section">${qualHtml(p, null)}</div>
         <div class="p-section"><h3>甄選方式</h3>${weightHtml(p)}</div>
+        ${docListHtml(p)}
         ${factsHtml(p)}
         <div><button class="btn" type="button" data-view-prog="${esc(p.i)}">看簡章原文</button></div>
       </div>`

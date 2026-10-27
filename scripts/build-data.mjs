@@ -268,6 +268,61 @@ function reflow(text) {
   return out.join('\n');
 }
 
+/* ---------- 6. the department's required-document list (指定繳交資料) ---------- */
+// 先找明確的「指定繳交資料」類標題；找不到才退而用「資料審查」「書面審查」這類也可能出現在別處的字。
+const DOC_HEAD_STRICT = ['指定繳交資料', '指定審查資料', '學系指定應繳文件', '學系指定繳交資料', '指定繳交文件', '應繳交資料', '應繳資料', '應繳文件', '審查資料', '繳交資料', '書面審查資料', '備審資料'];
+const DOC_HEAD_LOOSE = ['審查項目', '資料審查', '書面審查'];
+const headRe = list => new RegExp(`(${list.map(loose).join('|')})[\\s：:]*`, 'g');
+const DOC_STOP = /^(面試|口試|筆試|術科|甄試|甄選|複試|初試|成績|總成績|同分|佔總成|備註|聯絡|其他規定|注意事項|錄取|放榜|報到|時間|地點|日期|參加資格|評分|各項目|上傳|繳交方式|資料繳交|審查方式|審查標準|優先錄取|註[:：]|說明[:：])/;
+const ITEM_RE = /^\s*(?:\(?\d{1,2}[.、．)）]|[一二三四五六七八九十]{1,2}[、.．])\s*(.+)$/;
+const NOTE_RE = /^[※＊*◎●]|^註[:：]/;
+const DOC_WORD = /證明|資料|自傳|成績|表|函|信|作品|計畫|影本|文件|報告|紀錄|證書|證照|履歷|書|單|照片|影片/;
+const QUAL_WORD = /^(曾|獲|符合|具有|具備|參加|參與|通過|取得|有|持有|於|在)/;
+function requiredDocs(text, from) {
+  const lines = text.slice(from).split('\n');
+  const items = [];
+  let preamble = 0;
+  for (const raw of lines.slice(0, 40)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = ITEM_RE.exec(line);
+    if (m) {
+      if (/\d+\s*[%％]/.test(m[1])) { items.length = 0; continue; }   // 甄試項目（書面審查 50%）擠在同一欄
+      if (DOC_STOP.test(m[1]) || /\d+\s*年\s*\d+\s*月/.test(m[1])) break;
+      items.push(m[1]);
+    } else if (items.length) {
+      if (NOTE_RE.test(line)) continue;
+      if (DOC_STOP.test(line) || /\d+\s*[%％]/.test(line)) break;
+      items[items.length - 1] += line;
+    } else if (++preamble > 6) break;
+  }
+  const clean = items.map(i => {
+    let t = i.replace(/\s+/g, ' ').trim();
+    const stop = t.search(/[。；;]/);
+    if (stop >= 8) t = t.slice(0, stop);
+    t = t.replace(/[。；;：:，,]+$/, '').trim();
+    if (t.length > 70) t = t.slice(0, 70) + '…';
+    return t;
+  }).filter(t => t.length >= 2 && !/([：:]|包含|如下|如下列|為|分別為)$/.test(t) && !/^優先錄取/.test(t));
+  if (!clean.length || clean.filter(t => DOC_WORD.test(t)).length < clean.length / 2 || clean.filter(t => QUAL_WORD.test(t)).length > clean.length / 2) return [];
+  return clean.slice(0, 8);
+}
+function documentList(programName, pageNos, pages) {
+  for (const heads of [DOC_HEAD_STRICT, DOC_HEAD_LOOSE]) {
+    let best = [];
+    for (const n of pageNos) {
+      const text = pages[n - 1] || '';
+      for (const m of text.matchAll(headRe(heads))) {
+        const items = requiredDocs(text, m.index + m[0].length);
+        if (items.length >= 2 && items.length > best.length) best = items;
+      }
+      if (best.length >= 3) break;
+    }
+    if (best.length) return best;
+  }
+  return [];
+}
+
 /* ---------- main ---------- */
 if (!OFFLINE) await fetchPrograms();
 const raw = JSON.parse(fs.readFileSync(RAW, 'utf8'));
@@ -291,6 +346,8 @@ for (const [s, name] of schoolNames.entries()) {
       mapped++;
       const q = qualification(p.n, pg, text.pages);
       if (q) Object.assign(p, q);
+      const docs = documentList(p.n, pg, text.pages);
+      if (docs.length) p.docs = docs;
     }
   }
   schools.push({name, code, region: regionOf(name), pages: text ? text.pages.length : 0});

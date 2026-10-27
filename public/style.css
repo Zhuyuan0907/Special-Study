@@ -599,3 +599,5 @@ button.result:hover { border-color: var(--line-2); background: var(--sunk); }
 .ics-url { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--sunk); font-size: 13px; overflow-wrap: anywhere; user-select: all; }
 .warn-box { padding: 10px 14px; border-radius: var(--radius); background: var(--warn-soft); font-size: 13.5px; line-height: 1.55; }
 .warn-box b { font-weight: 600; }
+.doc-req { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.55; }
+.doc-req li { padding-left: 2px; overflow-wrap: anywhere; }
