@@ -77,6 +77,7 @@
       <label class="toggle"><input type="checkbox" id="f-nopf">不用作品集</label>
       <label class="toggle"><input type="checkbox" id="f-norl">不用推薦信</label>
     </div>
+    <div class="cond-bar" id="cond-bar"></div>
     <div class="result-meta" id="result-meta"></div>
     <div class="results scroll" id="results"></div>
   </section>
@@ -242,6 +243,21 @@
     <div class="action-row"><div><b>下載備份</b><p>把所有紀錄存成一個 JSON 檔</p></div><a class="btn" href="/api/export" download>下載</a></div>
     <div class="action-row"><div><b>從備份還原</b><p>相同的學校會用備份檔的內容覆蓋</p></div><button class="btn" type="button" id="b-import">選擇檔案</button></div>
     <div class="action-row"><div><b>匯出行事曆</b><p>Google 日曆可匯入的 CSV（設定 → 匯入）</p></div><button class="btn" type="button" id="b-csv">下載 CSV</button></div>
+  </div>
+</dialog>
+
+<!-- 我的條件：勾選自己有的經歷，對照簡章的報名資格 -->
+<dialog id="dlg-profile" class="modal modal-sm" tabindex="-1" aria-labelledby="c-title">
+  <div class="modal-head">
+    <div class="head-text"><h2 id="c-title">我的條件</h2><p>勾選你有的經歷或身分。「找科系」會列出簡章報名資格有提到這些條件的系，並標出符合哪幾項。比對的是簡章文字，只能當起點，細節請看簡章。</p></div>
+    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
+  </div>
+  <div class="modal-body cond-body scroll"><div class="cond-groups" id="cond-groups"></div></div>
+  <div class="add-actions cond-foot">
+    <button class="btn" type="button" id="cond-clear">全部取消</button>
+    <span class="spacer"></span>
+    <button class="btn" type="button" data-close>取消</button>
+    <button class="btn primary" type="button" id="cond-save">儲存並找科系</button>
   </div>
 </dialog>
 

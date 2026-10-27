@@ -34,6 +34,62 @@ const METHODS = ['資料審查', '面試', '筆試', '實作／術科'];
 const DEFAULT_DOCS = ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件', '推薦信', '系所指定其他資料'];
 const SUGGEST = ['資工', '資安', 'AIS3', 'APCS', '奧林匹亞', '科展', '電機', '資管', '醫學', '生科', '數學', '物理', '化學', '設計', '外文', '法律', '心理', '教育'];
 const REGION_NAME = {北: '北部', 中: '中部', 南: '南部', 東: '東部・離島'};
+// 「依我的條件找科系」：勾選的經歷，對照簡章的報名資格文字。關鍵字比對前會先正規化（小寫、台→臺）。
+const CONDITIONS = [
+  {group: '資訊', items: [
+    {id: 'apcs', label: 'APCS 程式設計先修檢測', kw: ['apcs', '程式設計先修']},
+    {id: 'ais3', label: 'AIS3 資安暑期課程', kw: ['ais3', '新型態資安']},
+    {id: 'jindun', label: '金盾獎', kw: ['金盾']},
+    {id: 'ctf', label: 'CTF 資安競賽', kw: ['ctf']},
+    {id: 'infocomp', label: '資訊學科能力競賽', kw: ['資訊學科', '學科能力競賽(資訊', '資訊科)複賽', '資訊科)決賽']},
+    {id: 'progcomp', label: '程式設計競賽（NPSC、ICPC…）', kw: ['程式設計競賽', '程式競賽', 'npsc', 'icpc', 'toi', 'yti', 'apcs 程式']},
+    {id: 'cpe', label: 'CPE 程式能力檢定', kw: ['cpe', '程式能力檢定']},
+    {id: 'project', label: '自己做過程式專案／作品', kw: ['程式作品', 'github', '專案', '軟體', 'app']},
+    {id: 'cert', label: '資訊相關證照', kw: ['證照', 'ipas', '乙級', '丙級']},
+  ]},
+  {group: '科學・數理', items: [
+    {id: 'olympiad', label: '奧林匹亞（選訓營、決賽）', kw: ['奧林匹亞', '奧林匹克', '選訓']},
+    {id: 'sciencefair', label: '科展', kw: ['科展', '科學展覽']},
+    {id: 'mathcomp', label: '數學競賽（AMC、TRML…）', kw: ['數學競賽', 'amc', 'trml', '數學能力競賽', '數學科']},
+    {id: 'research', label: '專題研究／小論文', kw: ['專題研究', '小論文', '研究成果', '科學研究', '研究報告']},
+    {id: 'invention', label: '發明展／專利／創客', kw: ['發明', '專利', '創客', 'maker']},
+  ]},
+  {group: '語文・人文', items: [
+    {id: 'english', label: '英語檢定（多益、托福、雅思…）', kw: ['toeic', 'toefl', 'ielts', '英檢', '多益', '英語能力', '英文能力', '英語檢定']},
+    {id: 'otherlang', label: '其他外語檢定（日檢、德檢…）', kw: ['日檢', 'jlpt', '德語', '法語', '西班牙語', '韓語', '外語能力', '語言能力檢定']},
+    {id: 'writing', label: '文學獎／寫作／創作', kw: ['文學獎', '徵文', '寫作', '作文', '文學創作']},
+    {id: 'speech', label: '演說／辯論／朗讀', kw: ['演說', '辯論', '朗讀', '演講']},
+  ]},
+  {group: '藝術・體育', items: [
+    {id: 'art', label: '美術／設計作品', kw: ['美術', '設計', '繪畫', '作品集', '視覺']},
+    {id: 'music', label: '音樂／表演／舞蹈', kw: ['音樂', '演奏', '表演', '舞蹈', '戲劇']},
+    {id: 'sports', label: '體育選手／運動成績', kw: ['運動', '體育', '選手', '全中運', '全國運動會', '競技']},
+    {id: 'esports', label: '電競', kw: ['電競', '電子競技']},
+  ]},
+  {group: '社會參與・技能', items: [
+    {id: 'leadership', label: '社團幹部／領導經驗', kw: ['社團', '幹部', '領導', '班聯會', '學生會']},
+    {id: 'service', label: '志工／服務學習', kw: ['志工', '服務學習', '公益']},
+    {id: 'business', label: '創業／商業競賽', kw: ['創業', '商業', '企劃', '行銷']},
+    {id: 'skills', label: '技藝／技能競賽', kw: ['技藝競賽', '技能競賽', '工科技藝', '商科技藝', '技藝']},
+  ]},
+  {group: '身分（不同教育資歷）', items: [
+    {id: 'experimental', label: '實驗教育／自學生', kw: ['實驗教育', '自學']},
+    {id: 'newimmigrant', label: '新住民或其子女', kw: ['新住民']},
+    {id: 'disadvantaged', label: '低收入／中低收入／特殊境遇', kw: ['低收入', '中低收入', '特殊境遇', '經濟弱勢', '弱勢']},
+    {id: 'overseas', label: '境外臺生／僑生', kw: ['境外', '僑生', '海外']},
+    {id: 'local', label: '在地／偏鄉／離島／原住民', kw: ['在地', '偏鄉', '離島', '原住民', '花東']},
+    {id: 'vocational', label: '高職／技術型高中', kw: ['高職', '技術型高中', '技高']},
+  ]},
+];
+const COND_BY_ID = new Map(CONDITIONS.flatMap(g => g.items).map(c => [c.id, c]));
+const condText = p => p._cond !== undefined ? p._cond : (p._cond = normName([p.qx, p.tgt, p.deb, p.deo, p.nt, p.pr].filter(Boolean).join(' ')));
+// 這個系的報名資格提到了我勾選的哪些條件
+function matchedConds(p) {
+  const tags = (S.profile.tags || []).map(id => COND_BY_ID.get(id)).filter(Boolean);
+  if (!tags.length) return [];
+  const text = condText(p);
+  return tags.filter(c => c.kw.some(k => text.includes(normName(k))));
+}
 const REGION_ORDER = {北: 0, 中: 1, 南: 2, 東: 3};
 
 /* ---------- helpers ---------- */
@@ -89,7 +145,7 @@ function toast(msg) {
 const S = {apps: [], profile: {}};
 const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', year: null, pdf: new Set(), terms: {synonyms: {}, aliases: {}}, links: {}};
 const t0 = new Date();
-const ui = {cal: {y: t0.getFullYear(), m: t0.getMonth()}, day: null, q: '', region: '', open: false, nopf: false, norl: false, sort: 'smart', all: false, limit: 40, search: null, searching: false};
+const ui = {cal: {y: t0.getFullYear(), m: t0.getMonth()}, day: null, q: '', region: '', open: false, nopf: false, norl: false, sort: 'smart', all: false, limit: 40, search: null, searching: false, match: false};
 
 /* ---------- saving ---------- */
 const inflight = {}, latest = {};
@@ -194,7 +250,11 @@ const rlText = rl => rl === 'N' ? '不需要' : rl.replace(/^暗/, '暗推').rep
 // 簡章的繳交資料說明很長，清單只留名稱：「自傳(含學習歷程描述…)」→「自傳」。
 function shortDoc(t) {
   let cut = -1;
-  for (const m of t.matchAll(/[（(：:，,]/g)) if (m.index >= 4) { cut = m.index; break; }
+  for (const m of t.matchAll(/[（(：:，,]/g)) {
+    if (m.index < 2) continue;
+    if (/[（(]/.test(m[0])) { const close = t.slice(m.index + 1).search(/[）)]/); if (close >= 0 && close <= 3) continue; }
+    cut = m.index; break;
+  }
   let n = cut > 0 ? t.slice(0, cut) : t;
   n = n.replace(/^(現為|依|本系|本校)/, '').trim();
   if (n.length > 28) n = n.slice(0, 28) + '…';
@@ -427,20 +487,34 @@ function passesFilters(p) {
   if (ui.norl && needsLetter(p)) return false;
   return true;
 }
+const matchOn = () => ui.match && (S.profile.tags || []).length > 0;
 function currentResults() {
+  const byMatch = (a, b) => matchedConds(b).length - matchedConds(a).length;
   if (ui.q.trim() && ui.search && !ui.search.error) {
     const score = new Map(ui.search.programs.map(r => [r.id, r]));
-    const list = ui.search.programs.map(r => P.byId.get(r.id)).filter(Boolean).filter(passesFilters);
+    let list = ui.search.programs.map(r => P.byId.get(r.id)).filter(Boolean).filter(passesFilters);
+    if (matchOn()) list = list.filter(p => matchedConds(p).length);
     const cmp = {
       smart: (a, b) => score.get(b.i).score - score.get(a.i).score || regKey(a).localeCompare(regKey(b)),
+      match: (a, b) => byMatch(a, b) || score.get(b.i).score - score.get(a.i).score || regKey(a).localeCompare(regKey(b)),
       deadline: (a, b) => regKey(a).localeCompare(regKey(b)),
       quota: (a, b) => (b.q || 0) - (a.q || 0),
-    }[ui.sort];
+    }[ui.sort] || ((a, b) => regKey(a).localeCompare(regKey(b)));
     return {list: list.sort(cmp), hits: score};
+  }
+  if (matchOn()) {
+    const list = P.programs.filter(passesFilters).filter(p => matchedConds(p).length);
+    const cmp = {quota: (a, b) => (b.q || 0) - (a.q || 0), deadline: (a, b) => regKey(a).localeCompare(regKey(b))}[ui.sort] || ((a, b) => byMatch(a, b) || regKey(a).localeCompare(regKey(b)));
+    return {list: list.sort(cmp), hits: new Map()};
   }
   if (ui.all) return {list: P.programs.filter(passesFilters).sort(ui.sort === 'quota' ? (a, b) => (b.q || 0) - (a.q || 0) : (a, b) => regKey(a).localeCompare(regKey(b))), hits: new Map()};
   return null;
 }
+const matchPills = items => {
+  if (!matchOn()) return '';
+  const labels = [...new Set(items.flatMap(p => matchedConds(p).map(c => c.label.split('（')[0])))];
+  return labels.length ? `<span class="pill ok">符合：${labels.map(esc).join('・')}</span>` : '';
+};
 const snippetHtml = s => s ? `${esc(s.before)}<mark>${esc(s.match)}</mark>${esc(s.after)}` : '';
 const snippetKey = s => s ? normName(s.before + s.match + s.after) : '';
 function rowSnippet(items, hits, seen) {
@@ -455,21 +529,30 @@ function rowHtml(r, hits, seen) {
   if (r.items.length === 1) {
     const p = r.items[0];
     return `<button class="result" type="button" data-prog="${esc(p.i)}">
-      <span class="r-top"><span class="r-dept">${esc(r.main)}</span>${qualPills(p._quals)}${mine(p.i) ? '<span class="pill info">已加入</span>' : ''}</span>
+      <span class="r-top"><span class="r-dept">${esc(r.main)}</span>${qualPills(p._quals)}${matchPills([p])}${mine(p.i) ? '<span class="pill info">已加入</span>' : ''}</span>
       <span class="r-meta">${progMeta(p).map(b => `<span>${b}</span>`).join('')}</span>
       ${rowSnippet(r.items, hits, seen)}
     </button>`;
   }
   const first = r.items[0];
   return `<div class="result multi">
-    <span class="r-top"><span class="r-dept">${esc(r.main)}</span><span class="hint">${r.items.length} 個招生組別</span></span>
+    <span class="r-top"><span class="r-dept">${esc(r.main)}</span>${matchPills(r.items)}<span class="hint">${r.items.length} 個招生組別</span></span>
     <span class="r-meta">${progMeta(first, false).map(b => `<span>${b}</span>`).join('')}</span>
     <span class="r-groups">${r.items.map(p => `<button class="grp" type="button" data-prog="${esc(p.i)}">${esc(p._quals.join('・') || '一般')}<small>名額 ${p.q ?? '—'}</small>${mine(p.i) ? '<span class="pill info">已加入</span>' : ''}</button>`).join('')}</span>
     ${rowSnippet(r.items, hits, seen)}
   </div>`;
 }
+function renderCondBar() {
+  const tags = (S.profile.tags || []).map(id => COND_BY_ID.get(id)).filter(Boolean);
+  const bar = $('#cond-bar');
+  if (!tags.length) { bar.innerHTML = `<button class="btn sm" type="button" id="btn-cond">依我的條件找科系</button><span class="hint">勾選你有的經歷或身分，列出簡章報名資格提到的系</span>`; return; }
+  bar.innerHTML = `<label class="toggle"><input type="checkbox" id="f-match" ${ui.match ? 'checked' : ''}>符合我的條件</label>
+    <span class="cond-chips">${tags.map(c => `<button class="cond-chip" type="button" data-edit-cond title="修改條件">${esc(c.label.split('（')[0])}</button>`).join('')}</span>
+    <button class="link" type="button" id="btn-cond">修改</button>`;
+}
 function renderFinder() {
   const box = $('#results'), meta = $('#result-meta');
+  renderCondBar();
   if (!P.programs.length) { meta.innerHTML = ''; box.innerHTML = '<div class="empty">正在載入科系資料…</div>'; return; }
   if (ui.searching) { meta.innerHTML = '<span>搜尋中…</span>'; return; }
   const res = currentResults();
@@ -478,16 +561,17 @@ function renderFinder() {
     box.innerHTML = `<div class="sugg">
       <div><h3>常用關鍵字（也會搜尋簡章全文）</h3><div class="chips">${SUGGEST.map(s => `<button class="chip" type="button" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>
       <div><h3>依學群</h3><div class="chips">${P.groups.slice(0, 18).map(([g, n]) => `<button class="chip" type="button" data-q="${esc(g)}">${esc(g)}<small>${n}</small></button>`).join('')}</div></div>
-      <div><button class="btn sm" type="button" id="show-all">列出全部系組</button></div>
+      <div class="chips"><button class="btn sm" type="button" id="show-all">列出全部系組</button>${(S.profile.tags || []).length ? '' : '<button class="btn sm primary" type="button" id="btn-cond2">依我的條件找科系</button>'}</div>
     </div>`;
     return;
   }
   if (ui.search && ui.search.error) { meta.innerHTML = ''; box.innerHTML = '<div class="empty">搜尋失敗，請確認伺服器還在執行。</div>'; return; }
   const {list, hits} = res;
-  if (!ui.q.trim() && ui.sort === 'smart') ui.sort = 'deadline';
+  if (!ui.q.trim() && ui.sort === 'smart') ui.sort = matchOn() ? 'match' : 'deadline';
+  if (ui.sort === 'match' && !matchOn()) ui.sort = ui.q.trim() ? 'smart' : 'deadline';
   const open = list.filter(p => p._reg && p._reg.end >= todayKey()).length;
-  const sorts = [['smart', '最相關'], ['deadline', '報名截止最近'], ['quota', '名額最多']].filter(([v]) => ui.q.trim() || v !== 'smart');
-  meta.innerHTML = `<span>${list.length} 個系組・${new Set(list.map(p => p.s)).size} 校・還能報名 ${open} 個</span>
+  const sorts = [['match', '最符合我的條件'], ['smart', '最相關'], ['deadline', '報名截止最近'], ['quota', '名額最多']].filter(([v]) => (v !== 'smart' || ui.q.trim()) && (v !== 'match' || matchOn()));
+  meta.innerHTML = `<span>${list.length} 個系組・${new Set(list.map(p => p.s)).size} 校・還能報名 ${open} 個${matchOn() ? '・只列簡章提到你條件的系' : ''}</span>
     <select id="sort" aria-label="排序">${sorts.map(([v, l]) => `<option value="${v}" ${ui.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const rows = mergeRows(list);
   const shown = rows.slice(0, ui.limit);
@@ -497,7 +581,7 @@ function renderFinder() {
     return `<section class="r-group"><div class="r-group-head"><b>${esc(g.school)}</b><span>${n} 個系組</span></div>${g.rows.map(r => rowHtml(r, hits, seen)).join('')}</section>`;
   }).join('');
   if (rows.length > shown.length) html += `<div class="more-row"><button class="btn sm" type="button" id="show-more">再顯示 ${Math.min(40, rows.length - shown.length)} 個（還有 ${rows.length - shown.length} 個）</button></div>`;
-  if (!list.length) html = `<div class="empty">${ui.q.trim() ? `找不到符合「${esc(ui.q.trim())}」的系組。` : '沒有符合條件的系組。'}<br>試試更短的關鍵字，或取消上面的篩選。</div>`;
+  if (!list.length) html = `<div class="empty">${ui.q.trim() ? `找不到符合「${esc(ui.q.trim())}」的系組。` : '沒有符合條件的系組。'}<br>試試更短的關鍵字，或取消上面的篩選${matchOn() ? '、或關掉「符合我的條件」' : ''}。</div>`;
   const general = ui.q.trim() && ui.search ? ui.search.general.filter(g => !ui.region || (P.schools.find(s => s.code === g.code) || {}).region === ui.region) : [];
   if (general.length) {
     html += `<div class="general-hits"><h3>簡章其他頁面也提到（總則、名額表等）</h3>${general.slice(0, 12).map(g => { const u = pdfUrl(g.code, g.page); const inner = `<b>${esc(g.school)} 第 ${g.page} 頁</b>${snippetHtml(g.snippet)}`; return u ? `<a class="general-hit" href="${u}" target="_blank" rel="noopener">${inner}</a>` : `<div class="general-hit">${inner}</div>`; }).join('')}</div>`;
@@ -1203,6 +1287,7 @@ $('#results').addEventListener('click', e => {
   const chip = e.target.closest('[data-q]');
   if (chip) { ui.q = chip.dataset.q; $('#q').value = ui.q; runSearch(); return; }
   if (e.target.closest('#show-all')) { ui.all = true; ui.sort = 'deadline'; renderFinder(); return; }
+  if (e.target.closest('#btn-cond2')) { openProfile(); return; }
   if (e.target.closest('#show-more')) { ui.limit += 40; renderFinder(); return; }
   const r = e.target.closest('[data-prog]');
   if (r) openProgram(r.dataset.prog);
@@ -1224,6 +1309,31 @@ document.addEventListener('keydown', e => {
   $('#q').focus();
   $('#q').select();
 });
+
+/* ---------- 我的條件 ---------- */
+const dlgProfile = $('#dlg-profile');
+function openProfile() {
+  const have = new Set(S.profile.tags || []);
+  $('#cond-groups').innerHTML = CONDITIONS.map(g => `<section class="cond-group"><h3>${esc(g.group)}</h3><div class="cond-list">${g.items.map(c => `<label class="check"><input type="checkbox" value="${c.id}" ${have.has(c.id) ? 'checked' : ''}>${esc(c.label)}</label>`).join('')}</div></section>`).join('');
+  dlgProfile.showModal();
+}
+async function saveProfile(patch) {
+  S.profile = {...S.profile, ...patch};
+  try { await request('PUT', '/api/profile', S.profile); } catch (e) { toast('儲存失敗：' + e.message); }
+}
+$('#cond-save').addEventListener('click', async () => {
+  const tags = $$('#cond-groups input:checked').map(i => i.value);
+  await saveProfile({tags});
+  ui.match = tags.length > 0;
+  ui.sort = ui.match ? 'match' : (ui.q.trim() ? 'smart' : 'deadline');
+  ui.limit = 40;
+  dlgProfile.close();
+  renderFinder();
+  if (tags.length) toast(`已依 ${tags.length} 個條件篩選科系`);
+});
+$('#cond-clear').addEventListener('click', () => { $$('#cond-groups input').forEach(i => { i.checked = false; }); });
+$('#cond-bar').addEventListener('click', e => { if (e.target.closest('#btn-cond') || e.target.closest('[data-edit-cond]')) openProfile(); });
+$('#cond-bar').addEventListener('change', e => { if (e.target.id === 'f-match') { ui.match = e.target.checked; ui.sort = ui.match ? 'match' : (ui.q.trim() ? 'smart' : 'deadline'); ui.limit = 40; renderFinder(); } });
 
 /* ---------- backup ---------- */
 $('#b-import').addEventListener('click', () => $('#import-file').click());
@@ -1262,6 +1372,7 @@ async function loadRecords() {
   const d = await request('GET', '/api/records');
   S.apps = (d.apps || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   S.profile = d.profile || {};
+  if ((S.profile.tags || []).length && !ui.q.trim()) ui.match = true;
   renderMain();
 }
 async function loadPrograms() {

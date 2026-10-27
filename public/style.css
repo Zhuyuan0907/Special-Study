@@ -601,3 +601,15 @@ button.result:hover { border-color: var(--line-2); background: var(--sunk); }
 .warn-box b { font-weight: 600; }
 .doc-req { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.55; }
 .doc-req li { padding-left: 2px; overflow-wrap: anywhere; }
+
+/* ---------- 我的條件 ---------- */
+.cond-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; flex: none; min-height: 30px; }
+.cond-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cond-chip { height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.cond-chip:hover { border-color: var(--ok); }
+.cond-body { display: block; padding: 18px 24px; }
+.cond-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; }
+.cond-group h3 { font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+.cond-list { display: flex; flex-direction: column; gap: 8px; }
+.cond-foot { padding: 12px 24px; border-top: 1px solid var(--line); flex: none; }
+@media (max-width: 720px) { .cond-groups { grid-template-columns: 1fr; } }
