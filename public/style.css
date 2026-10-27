@@ -613,3 +613,8 @@ button.result:hover { border-color: var(--line-2); background: var(--sunk); }
 .cond-list { display: flex; flex-direction: column; gap: 8px; }
 .cond-foot { padding: 12px 24px; border-top: 1px solid var(--line); flex: none; }
 @media (max-width: 720px) { .cond-groups { grid-template-columns: 1fr; } }
+.ev-tags { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.school-docs { padding: 1px 6px; border-radius: 4px; }
+.school-docs:hover { background: var(--accent-soft); color: var(--accent); }
+.cond-bar .link { height: 26px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 12.5px; color: var(--text-2); }
+.cond-bar .link:hover { text-decoration: none; border-color: var(--accent); color: var(--accent); }

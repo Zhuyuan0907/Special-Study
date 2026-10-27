@@ -229,8 +229,16 @@ function alerts() {
       out.push({crit: true, text: `${appName(a)} 記得${g ? `在 ${fmtDate(g.date)} 前` : ''}辦理放棄，否則不能參加其他管道`});
     }
   }
+  // 決定要讀某一間之後，其他正取、備取的學校都要在期限內放棄。
+  const going = chosenSchool();
+  if (going) for (const a of S.apps) {
+    if (a.id === going.id || !['admitted', 'waitlist'].includes(a.status) || a.choice === 'decline') continue;
+    const g = firstDate(a, ['giveup']);
+    out.push({crit: !!g && diffDays(g.date) <= 7, text: `你決定讀 ${appName(going)}，${appName(a)} 的${a.status === 'admitted' ? '正取' : '備取'}也要辦理放棄${g ? `（${fmtDate(g.date)}${g.time ? ' ' + g.time : ''} 前）` : ''}`});
+  }
   return out;
 }
+const chosenSchool = () => S.apps.find(a => a.choice === 'attend' && ['admitted', 'waitlist'].includes(a.status)) || null;
 
 /* ---------- program helpers ---------- */
 const progReg = p => { const r = (p.ev || []).find(e => e[0] === 'reg'); return r ? {start: r[1], end: r[2] || r[1], time: r[4] || (!r[2] ? r[3] : '') || ''} : null; };
@@ -389,7 +397,7 @@ function renderSchools() {
     return `<li><button class="school" type="button" data-app="${esc(a.id)}">
       <span class="school-top"><span class="school-name">${esc(a.school)}</span><span class="pill ${st.tone}">${label}</span></span>
       <span class="school-dept">${esc(a.dept || '（還沒填學系）')}${a.example ? ' <span class="pill example">範例</span>' : ''}</span>
-      <span class="school-meta"><span class="school-next">${nextHtml}</span>${docs.length ? `<span class="school-docs">備審 ${done}/${docs.length}</span>` : ''}</span>
+      <span class="school-meta"><span class="school-next">${nextHtml}</span>${docs.length ? `<span class="school-docs" data-docs title="打開備審清單">備審 ${done}/${docs.length}</span>` : ''}</span>
     </button></li>`;
   }).join('');
 }
@@ -437,14 +445,23 @@ function renderTimeline() {
     ol.innerHTML = `<li class="empty">${ui.day ? '這天沒有排定的日期。' : S.apps.length ? '接下來沒有排定的日期。' : '加入學校後，報名、面試、放榜日期會依序列在這裡。'}</li>`;
     return;
   }
-  ol.innerHTML = list.map(ev => {
+  // 同一間學校、同一天、同一個時間的幾個截止（報名、繳費、推薦函）合成一列。
+  const rows = [];
+  for (const ev of list) {
+    const prev = rows[rows.length - 1];
+    const sameTime = x => (x.time || '') === (ev.time || '');
+    if (prev && prev.app.id === ev.app.id && prev.date === ev.date && !prev.end && !ev.end && DEADLINE_KINDS.has(prev.kind) && DEADLINE_KINDS.has(ev.kind) && sameTime(prev)) { prev.kinds.push(ev.kind); prev.notes.push(ev.note); continue; }
+    rows.push({...ev, kinds: [ev.kind], notes: [ev.note]});
+  }
+  ol.innerHTML = rows.map(ev => {
     const ongoing = ev.date < t && ev.last >= t, f = ui.day || focusDate(ev), n = diffDays(f);
-    const tip = [KINDS[ev.kind].label, appName(ev.app), ev.end ? `${fmtDate(ev.date)}–${fmtDate(ev.end)}` : fmtDate(ev.date), ev.time, ev.note].filter(Boolean).join('｜');
+    const labels = ev.kinds.map(k => KINDS[k].label);
+    const tip = [labels.join('、'), appName(ev.app), ev.end ? `${fmtDate(ev.date)}–${fmtDate(ev.end)}` : fmtDate(ev.date), ev.time, ...ev.notes].filter(Boolean).join('｜');
     const deadline = DEADLINE_KINDS.has(ev.kind);
     const rowCls = !ongoing && deadline && n >= 0 && n <= 1 ? 'now-row' : !ongoing && deadline && n <= 3 && n >= 0 ? 'soon-row' : '';
     return `<li class="ev ${ongoing ? 'ongoing' : ''} ${rowCls}" data-app="${esc(ev.app.id)}" title="${esc(tip)}" tabindex="0">
       ${evDateHtml(ev, ongoing)}
-      <span class="tag ${KINDS[ev.kind].cat}">${KINDS[ev.kind].label}</span>
+      <span class="ev-tags">${ev.kinds.map(k => `<span class="tag ${KINDS[k].cat}">${KINDS[k].label}</span>`).join('')}</span>
       <span class="ev-title">${esc(ev.app.school)} <span>${esc(splitName(ev.app.dept || '').main)}</span></span>
       ${countdownHtml(ev, n, ongoing)}
     </li>`;
@@ -1033,6 +1050,8 @@ function nextStep(a) {
     case 'waitlist': {
       const cf = d(['confirm']), g = d(['giveup']);
       const head = a.status === 'admitted' ? '恭喜正取！' : `備取${a.waitNo ? `第 ${a.waitNo} 名` : ''}。`;
+      const other = chosenSchool();
+      if (!a.choice && other && other.id !== a.id) return {tone: 'danger', text: `你已經決定讀 ${appName(other)}。這間${a.status === 'admitted' ? '正取' : '備取'}要${g ? `在 ${when(g)} 前` : '在期限內'}辦理放棄，否則會影響其他管道。`, actions: [{label: '放棄這間', set: {choice: 'decline'}, primary: true}, {label: '改讀這間', set: {choice: 'attend'}}], wait: a.status === 'waitlist'};
       if (!a.choice) return {text: `${head}${cf ? `在 ${when(cf)} 前決定要不要讀。` : '決定要不要讀。'}`, actions: [{label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}], wait: a.status === 'waitlist'};
       if (a.choice === 'attend') return {tone: 'calm', text: a.confirmDone ? '已完成報到，恭喜！' : `記得${cf ? `在 ${when(cf)} 前` : ''}完成聲明就讀或報到。`, check: ['confirmDone', '已完成報到'], actions: [{label: '改變決定', set: {choice: ''}}], wait: a.status === 'waitlist'};
       return {tone: 'danger', text: `放棄要在${g ? ` ${when(g)} 前` : '學校規定期限內'}辦理，否則不能參加繁星、申請入學和分發入學。`, check: ['giveupDone', '已交出放棄聲明'], actions: [{label: '改變決定', set: {choice: ''}}]};
@@ -1060,6 +1079,7 @@ function renderNextStep() {
 }
 function applyStatus(patch) {
   Object.assign(cur, patch);
+  if (patch.choice === 'attend') for (const a of S.apps) if (a.id !== cur.id && a.choice === 'attend') upsertApp({...clone(a), choice: ''});
   if (patch.status && !['admitted', 'waitlist'].includes(patch.status)) cur.choice = '';
   pickResult = false;
   renderStepper(); renderNextStep();
@@ -1257,7 +1277,7 @@ $$('dialog').forEach(d => {
   d.addEventListener('click', e => { if (e.target === d) d.close(); });
   $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close()));
 });
-$('#school-list').addEventListener('click', e => { const b = e.target.closest('[data-app]'); if (b) openApp(b.dataset.app); });
+$('#school-list').addEventListener('click', e => { const b = e.target.closest('[data-app]'); if (b) openApp(b.dataset.app, e.target.closest('[data-docs]') ? 'docs' : undefined); });
 $('#example-note').addEventListener('click', async e => {
   if (e.target.id !== 'clear-ex') return;
   if (!clearArmed) { clearArmed = true; renderSchools(); setTimeout(() => { clearArmed = false; renderSchools(); }, 4000); return; }
