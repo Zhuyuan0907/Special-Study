@@ -618,3 +618,44 @@ button.result:hover { border-color: var(--line-2); background: var(--sunk); }
 .school-docs:hover { background: var(--accent-soft); color: var(--accent); }
 .cond-bar .link { height: 26px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 12.5px; color: var(--text-2); }
 .cond-bar .link:hover { text-decoration: none; border-color: var(--accent); color: var(--accent); }
+
+/* ---------- 手機（600px 以下）：視窗撐滿、分頁可橫向捲動、日期列改兩行 ---------- */
+@media (max-width: 600px) {
+  .topbar { gap: 10px; }
+  .next-days { font-size: 18px; }
+  .stats { gap: 12px; width: 100%; justify-content: space-between; }
+  .ev { grid-template-columns: max-content minmax(0, 1fr) max-content; grid-template-areas: "date tags cd" "date title cd"; row-gap: 2px; column-gap: 8px; }
+  .ev-date { grid-area: date; min-width: 0; }
+  .ev-tags { grid-area: tags; flex-direction: row; flex-wrap: wrap; }
+  .ev-title { grid-area: title; font-size: 13.5px; }
+  .ev .cd { grid-area: cd; }
+  .modal, .modal-sm, .modal-xs, .modal-add, .modal-app { width: calc(100vw - 16px); height: calc(100vh - 16px); max-height: calc(100vh - 16px); border-radius: 10px; }
+  .modal-xs { height: auto; }
+  .modal-head { flex-wrap: wrap; gap: 8px 10px; padding: 12px 14px; }
+  .modal-head .head-text { flex: 1 1 60%; }
+  .head-text h2 { font-size: 17px; }
+  .save-state { flex: 1 1 100%; order: 5; min-width: 0; text-align: left; white-space: normal; }
+  .head-actions { flex: 1 1 100%; order: 4; }
+  .app-top { padding: 10px 14px; }
+  .stepper { gap: 4px; }
+  .stepper button { font-size: 11px; }
+  .next-step { padding: 10px 12px; gap: 8px; }
+  .tabs-row { overflow-x: auto; padding: 0 8px; scrollbar-width: none; }
+  .tabs-row::-webkit-scrollbar { display: none; }
+  .tabs-row button { white-space: nowrap; flex: none; padding: 0 10px; height: 40px; }
+  .tab-panel { padding: 14px; }
+  .panel-bar { flex-wrap: wrap; }
+  .date-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; grid-template-areas: "kind kind del" "date time sub" "note note note"; }
+  .date-row select { grid-area: kind; }
+  .date-row input[type="date"] { grid-area: date; }
+  .date-row input[type="time"] { grid-area: time; }
+  .date-row input[type="text"] { grid-area: note; }
+  .date-row .row-sub { grid-area: sub; }
+  .date-row .icon-btn { grid-area: del; }
+  .add-step { padding: 14px; }
+  .add-actions { flex-wrap: wrap; }
+  .confirm-card { flex-wrap: wrap; }
+  .cols-2 .col { padding: 14px; }
+  .brochure { font-size: 13px; }
+}
+@media (max-width: 600px) { .confirm-card .pick-main { flex: 1 1 100%; } }
