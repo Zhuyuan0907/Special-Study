@@ -87,7 +87,7 @@ function toast(msg) {
 
 /* ---------- state ---------- */
 const S = {apps: [], profile: {}};
-const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', terms: {synonyms: {}, aliases: {}}, links: {}};
+const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', year: null, pdf: new Set(), terms: {synonyms: {}, aliases: {}}, links: {}};
 const t0 = new Date();
 const ui = {cal: {y: t0.getFullYear(), m: t0.getMonth()}, day: null, q: '', region: '', open: false, nopf: false, norl: false, sort: 'smart', all: false, limit: 40, search: null, searching: false};
 
@@ -184,6 +184,8 @@ function schoolLinks(name) {
   return s && P.links[s.code] ? P.links[s.code] : null;
 }
 const extLink = (href, label) => `<a class="btn sm ext" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+// 簡章 PDF 只有執行過 build-data 的伺服器才有；沒有就不顯示 PDF 連結。
+const pdfUrl = (code, page) => P.pdf.has(code) ? `/data/brochures/pdf/${code}.pdf${page ? '#page=' + page : ''}` : null;
 const pev = (p, kinds) => (p.ev || []).find(e => kinds.includes(e[0])) || null;
 const needsLetter = p => !!p.rl && /^[暗明]/.test(p.rl) && !/非必繳|選繳/.test(p.rl);
 const isTest = n => /筆試|術科|實作|測驗|展演|專長/.test(n);
@@ -488,7 +490,7 @@ function renderFinder() {
   if (!list.length) html = `<div class="empty">${ui.q.trim() ? `找不到符合「${esc(ui.q.trim())}」的系組。` : '沒有符合條件的系組。'}<br>試試更短的關鍵字，或取消上面的篩選。</div>`;
   const general = ui.q.trim() && ui.search ? ui.search.general.filter(g => !ui.region || (P.schools.find(s => s.code === g.code) || {}).region === ui.region) : [];
   if (general.length) {
-    html += `<div class="general-hits"><h3>簡章其他頁面也提到（總則、名額表等）</h3>${general.slice(0, 12).map(g => `<a class="general-hit" href="/data/brochures/pdf/${esc(g.code)}.pdf#page=${g.page}" target="_blank" rel="noopener"><b>${esc(g.school)} 第 ${g.page} 頁</b>${snippetHtml(g.snippet)}</a>`).join('')}</div>`;
+    html += `<div class="general-hits"><h3>簡章其他頁面也提到（總則、名額表等）</h3>${general.slice(0, 12).map(g => { const u = pdfUrl(g.code, g.page); const inner = `<b>${esc(g.school)} 第 ${g.page} 頁</b>${snippetHtml(g.snippet)}`; return u ? `<a class="general-hit" href="${u}" target="_blank" rel="noopener">${inner}</a>` : `<div class="general-hit">${inner}</div>`; }).join('')}</div>`;
   }
   box.innerHTML = html;
 }
@@ -572,14 +574,14 @@ async function openProgram(pid) {
     ${factsHtml(p)}
     ${events ? `<div class="p-section"><h3>這個系的時程</h3><ul class="p-events">${events}</ul></div>` : ''}
     ${p.cw ? `<div class="p-section"><h3>報到與遞補</h3><p>${esc(p.cw)}</p></div>` : ''}
-    <div class="p-section"><h3>連結</h3><div class="links">${links.map(([u, l]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${l}</a>`).join('')}<a class="btn sm" href="/data/brochures/pdf/${esc(p.code)}.pdf" target="_blank" rel="noopener">整份簡章 PDF</a></div></div>`;
+    <div class="p-section"><h3>連結</h3><div class="links">${links.map(([u, l]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${l}</a>`).join('')}${pdfUrl(p.code) ? `<a class="btn sm" href="${pdfUrl(p.code)}" target="_blank" rel="noopener">整份簡章 PDF</a>` : ''}</div></div>`;
   $('#p-facts').scrollTop = 0;
   const pages = p.pg || [];
   const hit = ui.q.trim() && ui.search && ui.search.programs ? ui.search.programs.find(r => r.id === pid) : null;
   const firstHit = hit && hit.page ? hit.page : null;
   dlgProg._scrollToMark = !!firstHit;
   $('#p-tabs').innerHTML = pages.map(n => `<button class="page-tab" type="button" role="tab" data-page="${n}" aria-selected="false">第 ${n} 頁</button>`).join('');
-  $('#p-text').innerHTML = pages.length ? '<p class="hint">載入簡章中…</p>' : `<p>這個系組沒有對應到簡章的特定頁面。</p><p><a href="/data/brochures/pdf/${esc(p.code)}.pdf" target="_blank" rel="noopener">開啟整份簡章 PDF</a></p>`;
+  $('#p-text').innerHTML = pages.length ? '<p class="hint">載入簡章中…</p>' : `<p>這個系組沒有對應到簡章的特定頁面。</p><p>${pdfUrl(p.code) ? `<a href="${pdfUrl(p.code)}" target="_blank" rel="noopener">開啟整份簡章 PDF</a>` : '可以到上面的「特殊選才網」連結查看簡章。'}</p>`;
   if (!dlgProg.open) dlgProg.showModal();
   dlgProg._pages = null;
   if (!pages.length) return;
@@ -597,7 +599,7 @@ function showPage(n) {
   const pg = data.list.find(x => x.page === n);
   $$('#p-tabs .page-tab').forEach(b => b.setAttribute('aria-selected', String(Number(b.dataset.page) === n)));
   const box = $('#p-text');
-  box.innerHTML = `${markText(pg ? pg.text : '', highlightRe())}\n\n<a href="/data/brochures/pdf/${esc(data.code)}.pdf#page=${n}" target="_blank" rel="noopener">在 PDF 開啟第 ${n} 頁 →</a>`;
+  box.innerHTML = `${markText(pg ? pg.text : '', highlightRe())}${pdfUrl(data.code, n) ? `\n\n<a href="${pdfUrl(data.code, n)}" target="_blank" rel="noopener">在 PDF 開啟第 ${n} 頁 →</a>` : ''}`;
   box.scrollTop = 0;
   const mk = dlgProg._scrollToMark && box.querySelector('mark');
   if (mk) box.scrollTop = Math.max(0, mk.offsetTop - box.offsetTop - 80);
@@ -851,7 +853,7 @@ function renderAppHead() {
   $('#a-title').textContent = cur.school || '手動新增學校';
   $('#a-sub').textContent = cur.dept || (cur.school ? '' : '先在「基本資料」填學校和學系，填好就會自動儲存');
   const L = schoolLinks(cur.school) || {}, p = cur.programId && P.byId.get(cur.programId);
-  $('#a-links').innerHTML = [L.apply && extLink(L.apply, '網路報名系統'), L.adm && extLink(L.adm, '學校招生網'), p && extLink(`/data/brochures/pdf/${p.code}.pdf`, '簡章 PDF'), /^https?:\/\//.test(cur.url || '') && extLink(cur.url, '系所網站')].filter(Boolean).join('');
+  $('#a-links').innerHTML = [L.apply && extLink(L.apply, '網路報名系統'), L.adm && extLink(L.adm, '學校招生網'), p && pdfUrl(p.code) && extLink(pdfUrl(p.code), '簡章 PDF'), /^https?:\/\//.test(cur.url || '') && extLink(cur.url, '系所網站')].filter(Boolean).join('');
 }
 function setSaveState(id, state) {
   if (!cur || cur.id !== id) return;
@@ -1251,7 +1253,9 @@ async function loadRecords() {
   renderMain();
 }
 async function loadPrograms() {
-  const [d, terms, links] = await Promise.all([request('GET', '/data/programs.json'), request('GET', '/data/search-terms.json').catch(() => null), request('GET', '/data/school-links.json').catch(() => null)]);
+  const [d, terms, links, meta] = await Promise.all([request('GET', '/data/programs.json'), request('GET', '/data/search-terms.json').catch(() => null), request('GET', '/data/school-links.json').catch(() => null), request('GET', '/api/meta').catch(() => null)]);
+  if (meta) { P.year = meta.year; P.pdf = new Set(meta.pdfSchools || []); }
+  if (P.year) for (const el of [$('#brand-year'), $('#g-year')]) el.textContent = `${P.year} 學年度大學特殊選才`;
   if (terms) P.terms = {synonyms: terms.synonyms || {}, aliases: terms.aliases || {}};
   if (links) P.links = links.schools || {};
   P.schools = d.schools;

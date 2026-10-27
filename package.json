@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "大學特殊選才個人紀錄：投遞學校、時程、面試、放榜，以及各校簡章全文搜尋",
   "private": true,
+  "repository": {"type": "git", "url": "https://github.com/Zhuyuan0907/Special-Study.git"},
+  "homepage": "https://github.com/Zhuyuan0907/Special-Study#readme",
+  "bugs": "https://github.com/Zhuyuan0907/Special-Study/issues",
   "license": "MIT",
   "type": "commonjs",
   "scripts": {

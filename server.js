@@ -83,12 +83,14 @@ function indexText(text) {
 }
 const norm = s => indexText(String(s || '')).norm;
 
-const DB = {programs: [], schools: [], byId: new Map(), pages: new Map(), general: []};
+const DB = {programs: [], schools: [], byId: new Map(), pages: new Map(), general: [], meta: {year: null, fetched: '', pdfSchools: []}};
 function loadProgramData() {
   const file = path.join(DATA_DIR, 'programs.json');
   if (!fs.existsSync(file)) { console.warn('找不到 data/programs.json，請先執行 npm run build-data'); return; }
   const d = JSON.parse(fs.readFileSync(file, 'utf8'));
   DB.schools = d.schools;
+  const pdfDir = path.join(DATA_DIR, 'brochures/pdf');
+  DB.meta = {year: d.year || null, fetched: d.fetched || '', source: d.source || '', pdfSchools: d.schools.filter(s => fs.existsSync(path.join(pdfDir, `${s.code}.pdf`))).map(s => s.code)};
   for (const s of d.schools) {
     const tf = path.join(DATA_DIR, 'brochures/text', `${s.code}.json`);
     if (!fs.existsSync(tf)) continue;
@@ -288,6 +290,8 @@ async function api(req, res, url) {
   const [resource, id] = parts;
 
   if (resource === 'records' && req.method === 'GET' && !id) return sendJson(req, res, 200, records);
+
+  if (resource === 'meta' && req.method === 'GET') return sendJson(req, res, 200, DB.meta);
 
   if (resource === 'search' && req.method === 'GET') return sendJson(req, res, 200, search(String(url.searchParams.get('q') || '').slice(0, 100)));
 
