@@ -34,12 +34,12 @@ function loadRecords() {
   for (const file of [RECORDS, RECORDS_EXAMPLE]) {
     try {
       const d = JSON.parse(fs.readFileSync(file, 'utf8'));
-      return {version: 1, apps: Array.isArray(d.apps) ? d.apps : [], profile: d.profile && typeof d.profile === 'object' ? d.profile : {}, updatedAt: d.updatedAt || null};
+      return {version: 2, apps: Array.isArray(d.apps) ? d.apps : [], todos: Array.isArray(d.todos) ? d.todos : [], profile: d.profile && typeof d.profile === 'object' ? d.profile : {}, notifyLastSent: d.notifyLastSent || '', updatedAt: d.updatedAt || null};
     } catch (e) {
       if (e.code !== 'ENOENT') console.warn(`無法讀取 ${path.basename(file)}：${e.message}`);
     }
   }
-  return {version: 1, apps: [], profile: {}, updatedAt: null};
+  return {version: 2, apps: [], todos: [], profile: {}, notifyLastSent: '', updatedAt: null};
 }
 
 function saveRecords() {
@@ -50,6 +50,7 @@ function saveRecords() {
     await fsp.writeFile(tmp, body, 'utf8');
     await fsp.rename(tmp, RECORDS);
   }).catch(e => console.error('儲存 records.json 失敗：', e));
+  scheduleSheetSync();
   return writeChain;
 }
 
@@ -231,6 +232,162 @@ function buildIcs() {
   return lines.map(icsFold).join('\r\n') + '\r\n';
 }
 
+/* ---------- 總表、每日提醒、同步到 Google Sheets ---------- */
+const STATUS_LABEL = {prep: '準備中', applied: '已報名', interview: '通過一階', waiting: '已面試', admitted: '正取', waitlist: '備取', rejected: '未錄取', out: '一階未通過', skipped: '沒有報名'};
+const TZ = 'Asia/Taipei';
+const isDate = k => /^\d{4}-\d{2}-\d{2}$/.test(k || '');
+const WD = '日一二三四五六';
+const wdOf = k => WD[new Date(k + 'T00:00:00Z').getUTCDay()];
+const mdOf = k => `${Number(k.slice(5, 7))}/${k.slice(8, 10)}`;
+// 現在的臺灣時間（伺服器本身可能在別的時區）
+function nowTaipei() {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-CA', {timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false}).formatToParts(new Date())) parts[p.type] = p.value;
+  return {date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour === '24' ? '00' : parts.hour}:${parts.minute}`};
+}
+const firstDateOf = (a, kinds) => (a.dates || []).filter(d => kinds.includes(d.kind) && isDate(d.date)).sort((x, y) => x.date.localeCompare(y.date))[0] || null;
+const whenText = d => d ? `${d.date}${d.time ? ' ' + d.time : ''}` : '';
+// 所有學校的一張總表：匯出 CSV、貼到試算表、同步到 Google Sheets 都用同一份。
+function buildTable() {
+  const headers = ['學校', '系組', '狀態', '報名截止', '繳件截止', '面試', '放榜', '報到截止', '放棄截止', '名額', '報名費', '備審完成', '備審項目', '報名系統', '筆記'];
+  const links = (() => { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'school-links.json'), 'utf8')).schools || {}; } catch { return {}; } })();
+  const codeOf = name => (DB.schools.find(s => s.name === name) || {}).code;
+  const rows = records.apps.map(a => {
+    const docs = a.docs || [], done = docs.filter(d => d.done).length;
+    const L = links[codeOf(a.school)] || {};
+    const status = a.status === 'waitlist' && a.waitNo ? `備取 ${a.waitNo}` : (STATUS_LABEL[a.status] || a.status || '');
+    return [a.school || '', a.dept || '', status + (a.choice === 'attend' ? '・要去讀' : a.choice === 'decline' ? '・放棄' : ''),
+      whenText(firstDateOf(a, ['reg'])), whenText(firstDateOf(a, ['upload', 'letter'])), whenText(firstDateOf(a, ['interview', 'exam', 'window'])), whenText(firstDateOf(a, ['release'])),
+      whenText(firstDateOf(a, ['confirm'])), whenText(firstDateOf(a, ['giveup'])), a.quota ?? '', a.fee ?? '', docs.length ? `${done}/${docs.length}` : '',
+      docs.map(d => (d.done ? '✓' : '○') + d.name).join('；'), L.apply || L.adm || '', (a.notes || '').replace(/\s+/g, ' ')];
+  });
+  return {headers, rows, updated: records.updatedAt};
+}
+const csvCell = v => { const s = String(v ?? ''); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const tableCsv = () => { const t = buildTable(); return '﻿' + [t.headers, ...t.rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'; };
+// 給 Notion、Obsidian 貼的 Markdown
+function buildMarkdown() {
+  const t = buildTable();
+  const esc = s => String(s ?? '').replace(/\|/g, '\\|');
+  const main = t.headers.slice(0, 11);
+  const lines = [`# 我的特選紀錄（${nowTaipei().date}）`, '', `| ${main.join(' | ')} |`, `| ${main.map(() => '---').join(' | ')} |`, ...t.rows.map(r => `| ${r.slice(0, 11).map(esc).join(' | ')} |`), ''];
+  for (const a of records.apps) {
+    lines.push(`## ${a.school} ${a.dept || ''}`.trim(), '');
+    const dates = (a.dates || []).filter(d => isDate(d.date)).sort((x, y) => x.date.localeCompare(y.date));
+    if (dates.length) lines.push(...dates.map(d => `- ${d.date}${d.time ? ' ' + d.time : ''} ${KIND_LABEL[d.kind] || '其他'}${d.note ? '：' + d.note : ''}`), '');
+    if ((a.docs || []).length) lines.push(...a.docs.map(d => `- [${d.done ? 'x' : ' '}] ${d.name}`), '');
+    if (a.prep) lines.push('面試準備：', '', a.prep, '');
+    if (a.asked) lines.push('面試紀錄：', '', a.asked, '');
+  }
+  const todos = (records.todos || []).filter(t => !t.done);
+  if (todos.length) lines.push('## 待辦', '', ...todos.map(t => `- [ ] ${t.text}${t.due ? `（${t.due}）` : ''}`), '');
+  return lines.join('\n');
+}
+// 接下來幾天的日期與待辦，做成一段純文字；每日提醒和「預覽」都用它。
+function buildDigest(days) {
+  const {date: today} = nowTaipei();
+  const until = addDaysKey(today, Math.max(0, days));
+  const items = [];
+  for (const a of records.apps) {
+    if (['rejected', 'out', 'skipped'].includes(a.status)) continue;
+    const dept = (a.dept || '').split(' ').sort((x, y) => y.length - x.length)[0] || '';
+    for (const d of a.dates || []) {
+      if (!isDate(d.date)) continue;
+      const last = isDate(d.end) && d.end > d.date ? d.end : d.date;
+      if (last < today || d.date > until) continue;
+      items.push({date: d.date >= today ? d.date : today, time: d.time || '', text: `${KIND_LABEL[d.kind] || '其他'}｜${a.school} ${dept}${d.date < today ? `（到 ${mdOf(last)}）` : ''}`});
+    }
+  }
+  for (const t of records.todos || []) {
+    if (t.done || !isDate(t.due) || t.due > until) continue;
+    const a = t.appId && records.apps.find(x => x.id === t.appId);
+    items.push({date: t.due < today ? today : t.due, time: '', text: `待辦｜${t.text}${a ? `（${a.school}）` : ''}${t.due < today ? `（${mdOf(t.due)} 到期）` : ''}`});
+  }
+  items.sort((x, y) => x.date.localeCompare(y.date) || (x.time || '99').localeCompare(y.time || '99'));
+  const lines = [`特選提醒｜${mdOf(today)}（${wdOf(today)}）`];
+  let cur = '';
+  for (const it of items) {
+    if (it.date !== cur) {
+      cur = it.date;
+      const n = Math.round((Date.parse(cur) - Date.parse(today)) / 864e5);
+      lines.push('', `▌${n === 0 ? '今天' : n === 1 ? '明天' : `${mdOf(cur)}（${wdOf(cur)}）`}`);
+    }
+    lines.push(`${it.time ? it.time + ' ' : ''}${it.text}`);
+  }
+  if (!items.length) lines.push('', `接下來 ${days} 天沒有排定的日期。`);
+  return {today, count: items.length, text: lines.join('\n')};
+}
+function postJson(url, body) {
+  return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal: AbortSignal.timeout(15000)});
+}
+const chunk = (s, n) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out; };
+async function sendNotify(text) {
+  const cfg = (records.profile && records.profile.notify) || {};
+  const sent = [], errors = [];
+  if (/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(cfg.discord || '')) {
+    try {
+      for (const part of chunk(text, 1900)) { const r = await postJson(cfg.discord, {content: part}); if (!r.ok) throw new Error(`Discord 回應 ${r.status}`); }
+      sent.push('discord');
+    } catch (e) { errors.push(`Discord：${e.message}`); }
+  }
+  if (cfg.tgToken && cfg.tgChat) {
+    try {
+      for (const part of chunk(text, 4000)) {
+        const r = await postJson(`https://api.telegram.org/bot${encodeURIComponent(cfg.tgToken)}/sendMessage`, {chat_id: cfg.tgChat, text: part});
+        if (!r.ok) throw new Error(`Telegram 回應 ${r.status}`);
+      }
+      sent.push('telegram');
+    } catch (e) { errors.push(`Telegram：${e.message}`); }
+  }
+  return {sent, errors};
+}
+const notifyConfigured = () => { const c = (records.profile && records.profile.notify) || {}; return !!(c.discord || (c.tgToken && c.tgChat)); };
+// 每分鐘看一次：到了設定的時間、今天還沒送過，就把接下來幾天的摘要送出去。
+async function notifyTick() {
+  if (!notifyConfigured()) return;
+  const cfg = records.profile.notify;
+  const {date, time} = nowTaipei();
+  if (time !== (cfg.time || '08:00') || records.notifyLastSent === date) return;
+  records.notifyLastSent = date;
+  const d = buildDigest(Number(cfg.days) || 7);
+  if (!d.count && cfg.skipEmpty !== false) { await saveRecords(); return; }
+  const r = await sendNotify(d.text);
+  if (r.errors.length) console.warn('提醒傳送失敗：', r.errors.join('；'));
+  await saveRecords();
+}
+// 同步到 Google Sheets：使用者在試算表的 Apps Script 貼一段程式並部署成網頁應用程式，這裡把總表 POST 過去。
+const sheetsUrlOk = u => /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(u || '');
+async function syncSheets() {
+  const cfg = (records.profile && records.profile.sheets) || {};
+  if (!sheetsUrlOk(cfg.url)) throw Object.assign(new Error('請先在設定貼上 Apps Script 網址（結尾是 /exec）'), {status: 400});
+  const t = buildTable();
+  const r = await postJson(cfg.url, {sheet: cfg.sheet || '特選紀錄', headers: t.headers, rows: t.rows, updated: t.updated, digest: buildDigest(14).text});
+  const body = await r.text();
+  if (!r.ok) throw new Error(`Google 回應 ${r.status}`);
+  let parsed = null;
+  try { parsed = JSON.parse(body); } catch { /* Apps Script 有時回 HTML（例如還沒授權） */ }
+  if (!parsed || !parsed.ok) throw new Error(parsed && parsed.error ? parsed.error : '試算表沒有回應 ok，請確認 Apps Script 已部署、存取權是「所有人」');
+  records.profile.sheets = {...cfg, lastSync: new Date().toISOString(), lastError: ''};
+  return {rows: t.rows.length, at: records.profile.sheets.lastSync};
+}
+let sheetTimer = null, sheetDirty = false;
+function scheduleSheetSync() {
+  const cfg = (records.profile && records.profile.sheets) || {};
+  if (!cfg.auto || !sheetsUrlOk(cfg.url)) return;
+  sheetDirty = true;
+  if (sheetTimer) return;
+  sheetTimer = setTimeout(async () => {
+    sheetTimer = null;
+    if (!sheetDirty) return;
+    sheetDirty = false;
+    try { await syncSheets(); }
+    catch (e) { records.profile.sheets = {...records.profile.sheets, lastError: e.message}; console.warn('同步 Google Sheets 失敗：', e.message); }
+    // 寫回 lastSync／lastError，但不要再觸發一次同步。
+    const body = JSON.stringify(records, null, 2) + '\n';
+    writeChain = writeChain.then(() => fsp.writeFile(RECORDS + '.tmp', body, 'utf8').then(() => fsp.rename(RECORDS + '.tmp', RECORDS))).catch(() => {});
+  }, 4000);
+}
+
 /* ---------- helpers ---------- */
 function send(res, status, body, headers = {}) {
   res.writeHead(status, {'Cache-Control': 'no-store', ...headers});
@@ -329,6 +486,33 @@ async function api(req, res, url) {
     return sendJson(req, res, 200, records.profile);
   }
 
+  if (resource === 'todos' && req.method === 'PUT') {
+    const body = await readBody(req);
+    if (!Array.isArray(body)) return sendJson(req, res, 400, {error: '待辦清單格式不正確'});
+    records.todos = body.filter(t => isPlainObject(t) && ID_RE.test(String(t.id || '')) && typeof t.text === 'string').slice(0, 500)
+      .map(t => ({id: t.id, text: t.text.slice(0, 300), due: isDate(t.due) ? t.due : '', appId: typeof t.appId === 'string' ? t.appId : '', done: !!t.done, createdAt: Number(t.createdAt) || Date.now()}));
+    await saveRecords();
+    return sendJson(req, res, 200, records.todos);
+  }
+
+  if (resource === 'digest' && req.method === 'GET') return sendJson(req, res, 200, buildDigest(Math.min(60, Number(url.searchParams.get('days')) || 7)));
+
+  if (resource === 'notify' && id === 'test' && req.method === 'POST') {
+    if (!notifyConfigured()) return sendJson(req, res, 400, {error: '還沒設定 Discord webhook 或 Telegram'});
+    const d = buildDigest(Number((records.profile.notify || {}).days) || 7);
+    const r = await sendNotify(d.text);
+    return sendJson(req, res, r.sent.length ? 200 : 502, {...r, count: d.count});
+  }
+
+  if (resource === 'sheets' && id === 'sync' && req.method === 'POST') {
+    try { const r = await syncSheets(); await saveRecords(); return sendJson(req, res, 200, r); }
+    catch (e) { return sendJson(req, res, e.status || 502, {error: e.message}); }
+  }
+
+  if (resource === 'table' && req.method === 'GET') return sendJson(req, res, 200, buildTable());
+  if (resource === 'table.csv' && req.method === 'GET') return send(res, 200, tableCsv(), {'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="special-study-${nowTaipei().date}.csv"`});
+  if (resource === 'export.md' && req.method === 'GET') return send(res, 200, buildMarkdown(), {'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="special-study-${nowTaipei().date}.md"`});
+
   if (resource === 'import' && req.method === 'POST') {
     const body = await readBody(req);
     if (!isPlainObject(body) || !Array.isArray(body.apps)) return sendJson(req, res, 400, {error: '這不是有效的備份檔'});
@@ -340,6 +524,7 @@ async function api(req, res, url) {
       n++;
     }
     if (isPlainObject(body.profile)) records.profile = body.profile;
+    if (Array.isArray(body.todos)) for (const t of body.todos) { if (isPlainObject(t) && ID_RE.test(String(t.id || '')) && !records.todos.some(x => x.id === t.id)) records.todos.push(t); }
     await saveRecords();
     return sendJson(req, res, 200, {imported: n});
   }
@@ -359,6 +544,7 @@ async function api(req, res, url) {
 /* ---------- server ---------- */
 records = loadRecords();
 loadProgramData();
+setInterval(() => notifyTick().catch(e => console.warn('提醒排程錯誤：', e.message)), 60 * 1000).unref();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
