@@ -196,7 +196,7 @@ function search(q) {
 }
 
 /* ---------- 行事曆訂閱（iCalendar） ---------- */
-const KIND_LABEL = {reg: '報名截止', pay: '繳費截止', upload: '資料上傳截止', letter: '推薦函截止', stage1: '面試名單公布', window: '甄試期間', interview: '面試', exam: '筆試／術科', release: '放榜', review: '成績複查', confirm: '報到截止', giveup: '放棄截止', wait: '備取遞補', other: '其他'};
+const KIND_LABEL = {reg: '報名截止', pay: '繳費截止', upload: '繳件截止', letter: '推薦函截止', stage1: '一階名單', window: '甄試期間', interview: '面試', exam: '筆試／術科', release: '放榜', review: '成績複查', confirm: '報到截止', giveup: '放棄截止', wait: '備取遞補', score: '成績單', open: '報名開始', other: '其他'};
 const DEADLINE_KINDS = new Set(['reg', 'pay', 'upload', 'letter', 'confirm', 'giveup', 'review']);
 const icsText = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 const icsDate = k => k.replace(/-/g, '');
@@ -347,7 +347,8 @@ async function notifyTick() {
   if (!notifyConfigured()) return;
   const cfg = records.profile.notify;
   const {date, time} = nowTaipei();
-  if (time !== (cfg.time || '08:00') || records.notifyLastSent === date) return;
+  // 到了設定的時間才送；電腦那時候睡著的話，醒來後當天補送一次。
+  if (time < (cfg.time || '08:00') || records.notifyLastSent === date) return;
   records.notifyLastSent = date;
   const d = buildDigest(Number(cfg.days) || 7);
   if (!d.count && cfg.skipEmpty !== false) { await saveRecords(); return; }

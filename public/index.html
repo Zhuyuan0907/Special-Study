@@ -4,266 +4,112 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>我的特選紀錄</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%232563eb%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-size=%2216%22 text-anchor=%22middle%22 fill=%22white%22%3E特%3C/text%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="特選">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%231c1b19%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-size=%2216%22 font-family=%22-apple-system,PingFang TC,sans-serif%22 font-weight=%22600%22 text-anchor=%22middle%22 fill=%22%23faf8f4%22%3E特%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 180 180%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%231c1b19%22/%3E%3Ctext x=%2290%22 y=%22122%22 font-size=%2290%22 font-family=%22-apple-system,PingFang TC,sans-serif%22 font-weight=%22600%22 text-anchor=%22middle%22 fill=%22%23faf8f4%22%3E特%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+<script>try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">
-    <h1>我的特選紀錄</h1>
-    <span class="brand-sub" id="brand-year">大學特殊選才</span>
-  </div>
-  <div class="next" id="next" aria-live="polite"></div>
-  <dl class="stats" id="stats"></dl>
-  <div class="top-actions">
-    <button class="btn" type="button" id="btn-guide">特選須知</button>
-    <button class="btn" type="button" id="btn-backup">行事曆・備份</button>
+<header class="nav">
+  <div class="brand"><span class="mark" aria-hidden="true">特</span><span class="brand-name">我的特選紀錄</span><span class="brand-year" id="brand-year"></span></div>
+  <nav class="tabs" id="tabs" aria-label="畫面">
+    <button type="button" role="tab" data-view="week">本週</button>
+    <button type="button" role="tab" data-view="schools">學校</button>
+    <button type="button" role="tab" data-view="docs">備審</button>
+    <button type="button" role="tab" data-view="calendar">行事曆</button>
+    <button type="button" role="tab" data-view="finder">找科系</button>
+  </nav>
+  <div class="nav-actions">
+    <button class="btn ghost" type="button" id="btn-settings"></button>
+    <button class="btn fill" type="button" id="btn-add">＋ 新增學校</button>
   </div>
 </header>
 
-<main class="board">
-  <section class="panel" aria-labelledby="h-schools">
-    <div class="panel-head">
-      <h2 id="h-schools">我的學校 <span class="count" id="school-count"></span></h2>
-      <button class="btn sm primary" type="button" id="btn-add">＋ 新增學校</button>
+<main>
+  <section class="view" id="view-week" aria-label="本週">
+    <div class="week-left">
+      <div class="hero" id="hero"></div>
+      <div class="strip" id="strip"></div>
+      <div class="tasks" id="tasks"></div>
     </div>
-    <div id="example-note"></div>
-    <ul class="school-list scroll" id="school-list"></ul>
+    <div class="week-right" id="week-right"></div>
   </section>
 
-  <section class="panel" aria-labelledby="h-timeline">
-    <div class="panel-head">
-      <h2 id="h-timeline">時程</h2>
-      <div class="cal-nav">
-        <button class="icon-btn" type="button" id="cal-prev" aria-label="上個月">‹</button>
-        <span class="cal-title" id="cal-title"></span>
-        <button class="icon-btn" type="button" id="cal-next" aria-label="下個月">›</button>
-        <button class="btn sm" type="button" id="cal-today">今天</button>
+  <section class="view" id="view-schools" aria-label="學校">
+    <aside class="rail">
+      <div class="rail-head"><b>學校 <span class="muted" id="rail-count"></span></b><span class="small muted" id="rail-fee"></span></div>
+      <div class="rail-list scroll" id="rail"></div>
+      <div class="rail-foot"><button class="btn sm" type="button" id="rail-add">＋ 新增學校</button><button class="btn sm ghost" type="button" id="rail-print">列印總表</button></div>
+    </aside>
+    <div class="sheet" id="sheet"></div>
+  </section>
+
+  <section class="view" id="view-docs" aria-label="備審">
+    <div style="display:flex;flex-direction:column;flex:1;min-height:0;min-width:0">
+      <div class="view-head">
+        <div><h2>備審資料</h2><p class="sub" id="docs-sub"></p></div>
+        <div class="view-tools" id="docs-tools"></div>
       </div>
+      <div class="matrix-wrap" id="matrix"></div>
     </div>
-    <div class="alerts" id="alerts"></div>
-    <div class="calendar" id="calendar"></div>
-    <div class="legend" aria-hidden="true">
-      <span><i class="dot k-due"></i>截止・報到</span>
-      <span><i class="dot k-test"></i>面試・筆試</span>
-      <span><i class="dot k-result"></i>公告・放榜</span>
-      <span class="legend-clash"><i class="clash-mark"></i>面試撞期</span>
-    </div>
-    <div class="list-head">
-      <h3 id="ev-title">接下來的日期</h3>
-      <button class="link" type="button" id="ev-clear" hidden>顯示全部日期</button>
-    </div>
-    <ol class="events scroll" id="events"></ol>
   </section>
 
-  <section class="panel" aria-labelledby="h-finder">
-    <div class="panel-head">
-      <h2 id="h-finder">找科系・搜尋簡章</h2>
-      <span class="hint">按 <kbd>/</kbd> 開始搜尋</span>
+  <section class="view" id="view-calendar" aria-label="行事曆">
+    <div class="cal-head">
+      <div class="cal-nav">
+        <h2 id="cal-title"></h2>
+        <button class="icon-btn" type="button" id="cal-prev" aria-label="上個月">‹</button>
+        <button class="icon-btn" type="button" id="cal-next" aria-label="下個月">›</button>
+        <button class="btn sm ghost" type="button" id="cal-today">今天</button>
+      </div>
+      <div class="view-tools" id="cal-tools"></div>
     </div>
-    <div class="search">
-      <input type="search" id="q" placeholder="科系、學校或簡章內容，例如：資工、AIS3、奧林匹亞" autocomplete="off" aria-label="搜尋科系、學校或簡章內容">
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-foot"><div class="legend" id="cal-legend"></div><span id="cal-note"></span></div>
+    <div class="daypop" id="daypop"></div>
+  </section>
+
+  <section class="view" id="view-finder" aria-label="找科系">
+    <div class="finder-left">
+      <div class="search"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="q" placeholder="科系、學校或簡章裡的字，例如：資工、清大 電機、AIS3" autocomplete="off" aria-label="搜尋科系"></div>
+      <div class="filters">
+        <select id="f-region" aria-label="地區"><option value="">全部地區</option><option value="北">北部</option><option value="中">中部</option><option value="南">南部</option><option value="東">東部・離島</option></select>
+        <label class="toggle"><input type="checkbox" id="f-open">還能報名</label>
+        <label class="toggle"><input type="checkbox" id="f-nopf">不用作品集</label>
+        <label class="toggle"><input type="checkbox" id="f-norl">不用推薦信</label>
+        <span id="cond-bar" class="cond-row"></span>
+      </div>
+      <div class="result-meta" id="result-meta"></div>
+      <div class="results scroll" id="results"></div>
     </div>
-    <div class="filters">
-      <select id="f-region" aria-label="地區">
-        <option value="">全部地區</option>
-        <option value="北">北部</option>
-        <option value="中">中部</option>
-        <option value="南">南部</option>
-        <option value="東">東部・離島</option>
-      </select>
-      <label class="toggle"><input type="checkbox" id="f-open">還能報名</label>
-      <label class="toggle"><input type="checkbox" id="f-nopf">不用作品集</label>
-      <label class="toggle"><input type="checkbox" id="f-norl">不用推薦信</label>
-    </div>
-    <div class="cond-bar" id="cond-bar"></div>
-    <div class="result-meta" id="result-meta"></div>
-    <div class="results scroll" id="results"></div>
+    <div class="finder-right" id="prog"></div>
   </section>
 </main>
 
 <!-- 新增學校：選學校 → 選系組 → 確認 → 完成 -->
-<dialog id="dlg-add" class="modal modal-add" tabindex="-1" aria-labelledby="add-title">
+<dialog id="dlg-add" class="modal" tabindex="-1" aria-labelledby="add-title">
   <div class="modal-head">
-    <div class="head-text">
-      <h2 id="add-title">新增學校</h2>
-      <ol class="wizard-steps" id="add-steps">
-        <li data-step="1"><span>1</span>選學校</li>
-        <li data-step="2"><span>2</span>選系組</li>
-        <li data-step="3"><span>3</span>確認加入</li>
-      </ol>
-    </div>
+    <div class="t"><h2 id="add-title">新增學校</h2><ol class="wizard-steps" id="add-steps"><li data-step="1"><span>1</span>學校</li><li data-step="2"><span>2</span>系組</li><li data-step="3"><span>3</span>確認</li></ol></div>
     <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
   </div>
-  <div class="add-body" id="add-body"></div>
+  <div class="modal-body" id="add-body"></div>
 </dialog>
 
-<!-- 我的學校：一間學校的紀錄 -->
-<dialog id="dlg-app" class="modal modal-app" tabindex="-1" aria-labelledby="a-title">
+<!-- 設定：外觀、我的條件、提醒、Google Sheets、匯出與備份、特選須知 -->
+<dialog id="dlg-settings" class="modal" tabindex="-1" aria-labelledby="set-title">
   <div class="modal-head">
-    <div class="head-text">
-      <h2 id="a-title"></h2>
-      <p id="a-sub"></p>
-      <div class="head-links" id="a-links"></div>
-    </div>
-    <span class="save-state" id="a-save" aria-live="polite"></span>
+    <div class="t"><h2 id="set-title">設定</h2></div>
     <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
   </div>
-  <div class="app-top">
-    <ol class="stepper" id="a-stepper" aria-label="進度"></ol>
-    <div class="next-step" id="a-next" aria-live="polite"></div>
-  </div>
-  <div class="tabs-row" role="tablist" id="a-tabs" aria-label="學校紀錄分頁">
-    <button role="tab" type="button" data-tab="dates" id="tab-dates">日期</button>
-    <button role="tab" type="button" data-tab="docs" id="tab-docs">備審資料</button>
-    <button role="tab" type="button" data-tab="notes" id="tab-notes">面試筆記</button>
-    <button role="tab" type="button" data-tab="brochure" id="tab-brochure">簡章重點</button>
-    <button role="tab" type="button" data-tab="info" id="tab-info">基本資料</button>
-  </div>
-  <div class="tab-panels">
-    <section class="tab-panel scroll" data-panel="dates" role="tabpanel" aria-labelledby="tab-dates">
-      <div class="panel-bar">
-        <p class="hint">這些日期都會出現在主畫面的時程和月曆裡。可以直接修改。</p>
-        <button class="btn sm" type="button" id="a-add-date">＋ 新增日期</button>
-      </div>
-      <div class="date-list" id="a-dates"></div>
-    </section>
-    <section class="tab-panel scroll" data-panel="docs" role="tabpanel" aria-labelledby="tab-docs" hidden>
-      <div class="panel-bar">
-        <p class="hint">準備好一項就打勾。項目名稱可以直接改。</p>
-        <button class="btn sm" type="button" id="a-add-doc">＋ 新增項目</button>
-      </div>
-      <ul class="doc-list" id="a-docs"></ul>
-    </section>
-    <section class="tab-panel scroll" data-panel="notes" role="tabpanel" aria-labelledby="tab-notes" hidden>
-      <div class="notes-grid">
-        <div class="field">
-          <label for="a-prep">面試準備重點</label>
-          <textarea id="a-prep" rows="12" placeholder="自我介紹、報考動機、作品要怎麼講、可能被問的問題…"></textarea>
-        </div>
-        <div class="field">
-          <label for="a-asked">面試後紀錄</label>
-          <textarea id="a-asked" rows="12" placeholder="被問了哪些問題、哪裡答得好、哪裡可以更好"></textarea>
-        </div>
-      </div>
-    </section>
-    <section class="tab-panel scroll" data-panel="brochure" role="tabpanel" aria-labelledby="tab-brochure" hidden>
-      <div id="a-brochure"></div>
-    </section>
-    <section class="tab-panel scroll" data-panel="info" role="tabpanel" aria-labelledby="tab-info" hidden>
-      <div class="info-grid">
-        <div class="field"><label for="a-school">學校</label><input id="a-school" list="school-names" autocomplete="off" placeholder="例如：輔仁大學"></div>
-        <div class="field"><label for="a-dept">學系／組別</label><input id="a-dept" autocomplete="off" placeholder="例如：資訊工程學系"></div>
-        <div class="field"><span class="label">甄選方式</span><div class="check-row" id="a-methods"></div></div>
-        <div class="field-row">
-          <div class="field"><label for="a-fee">報名費（元）</label><input id="a-fee" type="number" min="0" inputmode="numeric"></div>
-          <div class="field"><label for="a-quota">招生名額</label><input id="a-quota" type="number" min="0" inputmode="numeric"></div>
-        </div>
-        <div class="field span-2"><label for="a-url">簡章或系所網址</label><input id="a-url" type="url" placeholder="https://" autocomplete="off"></div>
-        <div class="field span-2"><label for="a-notes">筆記</label><textarea id="a-notes" rows="5" placeholder="系所特色、想強調的經歷、承辦窗口…"></textarea></div>
-      </div>
-      <div class="danger-zone">
-        <div><b>刪除這間學校</b><p class="hint">會連同日期、備審和筆記一起刪除。</p></div>
-        <button class="btn danger-text" type="button" id="a-delete">刪除</button>
-      </div>
-    </section>
-  </div>
+  <div class="modal-body settings-body" id="settings"></div>
 </dialog>
 
-<!-- 系組簡章 -->
-<dialog id="dlg-prog" class="modal" tabindex="-1" aria-labelledby="p-title">
-  <div class="modal-head">
-    <div class="head-text">
-      <h2 id="p-title"></h2>
-      <p id="p-sub"></p>
-    </div>
-    <div class="head-actions" id="p-actions"></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
-  <div class="modal-body cols-2">
-    <section class="col scroll" id="p-facts"></section>
-    <section class="col">
-      <div class="col-head">
-        <h3 class="col-title">簡章原文</h3>
-        <div class="page-tabs" id="p-tabs" role="tablist" aria-label="簡章頁面"></div>
-      </div>
-      <div class="brochure scroll" id="p-text"></div>
-    </section>
-  </div>
-</dialog>
-
-<!-- 特選須知 -->
-<dialog id="dlg-guide" class="modal modal-sm" aria-labelledby="g-title">
-  <div class="modal-head">
-    <div class="head-text"><h2 id="g-title">特選須知</h2><p id="g-year">大學特殊選才</p></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
-  <div class="modal-body guide scroll">
-    <div class="guide-grid">
-      <div class="guide-col">
-        <h3>特殊選才是什麼</h3>
-        <p>各大學依教育部「大學辦理特殊選才招生計畫」自己辦理的招生管道，對象是有特殊才能、經歷、成就或不同教育資歷的學生，例如實驗教育、境外臺生、新住民子女、經濟弱勢學生。不採計學測與分科測驗成績。</p>
-        <h3>116 學年度</h3>
-        <p>58 校、763 系組，共 2,593 個名額。另有「願景計畫」與「資安外加」名額。</p>
-        <h3>時程</h3>
-        <p>報名大多在 9 月底到 12 月初，面試大多在 11、12 月，放榜多在 11 月底到 12 月，最晚到隔年 1 月。每間學校、每個系都不一樣。</p>
-        <h3 class="danger">錄取但不去讀，一定要辦放棄</h3>
-        <p>沒在學校規定期限內放棄入學資格的人，不能參加當學年度的繁星推薦、個人申請、分發入學等管道。</p>
-      </div>
-      <div class="guide-col">
-        <h3>一個系的流程</h3>
-        <ol class="flow">
-          <li><b>讀簡章、確認報名資格</b><span>每個系的資格和要交的資料都不同</span></li>
-          <li><b>網路報名、繳費</b><span>低收入戶等身分可以減免報名費</span></li>
-          <li><b>上傳備審資料、推薦函</b><span>推薦函多為暗推，要提早請老師寫</span></li>
-          <li><b>第一階段書審</b><span>部分學校先篩選，通過才能面試</span></li>
-          <li><b>面試、筆試或實作</b><span>准考證通常要自己上網列印</span></li>
-          <li><b>放榜</b><span>正取、備取或未錄取，可以申請成績複查</span></li>
-          <li><b>聲明就讀或放棄</b><span>注意期限，會影響其他升學管道</span></li>
-        </ol>
-        <h3>資料來源</h3>
-        <p class="small">系組資料與簡章：<a href="https://sta-tw.org/bochures/" target="_blank" rel="noopener">特殊選才網・簡章搜尋</a>（日曆小幫手整理，<span id="g-fetched"></span> 擷取）。統計數字：<a href="https://www.unews.com.tw/News/Info/11591" target="_blank" rel="noopener">大學問</a>。資料僅供參考，報名前請以各校簡章為準。</p>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<!-- 備份與匯出 -->
-<dialog id="dlg-backup" class="modal modal-xs" aria-labelledby="b-title">
-  <div class="modal-head">
-    <div class="head-text"><h2 id="b-title">行事曆與備份</h2><p>紀錄存在伺服器的 data/records.json</p></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
-  <div class="modal-body stack">
-    <div class="action-row col">
-      <div><b>訂閱到手機和電腦的行事曆</b><p>在 Mac 的「行事曆」或 iPhone 的「設定 → 行事曆 → 帳號 → 加入訂閱的行事曆」貼上這個網址。所有日期會自動同步，截止前一天會提醒，有時間的截止另外在 3 小時前提醒。</p></div>
-      <div class="ics-row"><code class="ics-url" id="ics-url"></code><button class="btn sm" type="button" id="ics-copy">複製網址</button></div>
-    </div>
-    <div class="action-row"><div><b>下載備份</b><p>把所有紀錄存成一個 JSON 檔</p></div><a class="btn" href="/api/export" download>下載</a></div>
-    <div class="action-row"><div><b>從備份還原</b><p>相同的學校會用備份檔的內容覆蓋</p></div><button class="btn" type="button" id="b-import">選擇檔案</button></div>
-    <div class="action-row"><div><b>匯出行事曆</b><p>Google 日曆可匯入的 CSV（設定 → 匯入）</p></div><button class="btn" type="button" id="b-csv">下載 CSV</button></div>
-  </div>
-</dialog>
-
-<!-- 我的條件：勾選自己有的經歷，對照簡章的報名資格 -->
-<dialog id="dlg-profile" class="modal modal-sm" tabindex="-1" aria-labelledby="c-title">
-  <div class="modal-head">
-    <div class="head-text"><h2 id="c-title">我的條件</h2><p>勾選你有的經歷或身分。「找科系」會列出簡章報名資格有提到這些條件的系，並標出符合哪幾項。比對的是簡章文字，只能當起點，細節請看簡章。</p></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
-  <div class="modal-body cond-body scroll"><div class="cond-groups" id="cond-groups"></div></div>
-  <div class="add-actions cond-foot">
-    <button class="btn" type="button" id="cond-clear">全部取消</button>
-    <span class="spacer"></span>
-    <button class="btn" type="button" data-close>取消</button>
-    <button class="btn primary" type="button" id="cond-save">儲存並找科系</button>
-  </div>
-</dialog>
-
-<datalist id="school-names"></datalist>
+<div id="print" aria-hidden="true"></div>
 <input type="file" id="import-file" accept=".json,application/json" hidden>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="app.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -107,11 +107,12 @@ const EMPTY = new Set(['', '-', '未公告', '尚未公告', '尚未公布', '�
 const val = v => { const s = v == null ? '' : String(v).trim(); return EMPTY.has(s) ? '' : s; };
 // 來源資料裡的 00:00 不可靠（逢甲實際是 18:00、靜宜沒寫時間、中教大是 24 時），一律視為「時間未知」。
 const tm = v => { const m = /^(\d{1,2}):(\d{2})$/.exec(val(v)); if (!m) return ''; const t = `${m[1].padStart(2, '0')}:${m[2]}`; return t === '00:00' ? '' : t; };
-const dt = v => /^\d{4}-\d{2}-\d{2}$/.test(val(v)) ? val(v) : '';
+// 來源偶爾有打錯的年份（例如 2062-12-07），只接受這個學年度前後的日期。
+const dt = v => /^\d{4}-\d{2}-\d{2}$/.test(val(v)) && Number(val(v).slice(0, 4)) >= YEAR + 1909 && Number(val(v).slice(0, 4)) <= YEAR + 1912 ? val(v) : '';
 function kindOf(n) {
   if (n.includes('推薦函')) return 'letter';
   if (n.includes('複查')) return 'review';
-  if (n.includes('非放榜')) return 'other';
+  if (n.includes('非放榜')) return 'score';
   if (n.includes('網路報名')) return 'reg';
   if (n.startsWith('繳費') && !n.includes('繳件')) return 'pay';
   if (['上傳', '繳件', '郵寄', '親送', '應繳資料', '指定繳交', '寄繳'].some(k => n.includes(k))) return 'upload';
@@ -323,6 +324,36 @@ function documentList(programName, pageNos, pages) {
   return [];
 }
 
+/* ---------- 7. 面試注意事項與備審格式規定：從系所頁面抓出相關的句子 ---------- */
+// 簡章的這些細節（視訊面試、全英語、簡報幾分鐘、自傳一千字以內、PDF 幾 MB）不在整理資料裡，但會害人。
+const IV_TOPIC = /面試|口試|複試|甄試|第二階段|二階/;
+const IV_DETAIL = /視訊|線上|英語|英文|簡報|分鐘|攜帶|自備|准考證|投影片|現場|團體|個別|系網|網站|公告|公布|報到|地點|實作|上機|筆試|術科|抽籤|服裝|遲到/;
+const FMT_DETAIL = /(\d+|[一二三四五六七八九十]+)\s*(字|頁|張|份|MB|mb|M)|PDF|pdf|檔案|格式|合併|裝訂|手寫|郵戳|確認|密封|直式|橫式|解析度|連結|QR/;
+const FMT_LIMIT = /以內|為限|不超過|至多|上限|最多|限|須|請|應|需|不得|勿/;
+const SKIP_SENT = /^(第[一二三四五六七八九十]+條|註[:：]|備註)/;
+const count = (s, re) => (s.match(re) || []).length;
+// 括號沒配對、以標點開頭的多半是被換頁切斷的句子，不要。
+const fragment = s => /^[)）、，,：:。；;]/.test(s) || count(s, /[)）]/g) > count(s, /[(（]/g) || /[(（][^)）]*$/.test(s) && count(s, /[(（]/g) > count(s, /[)）]/g) + 0;
+function sentencesOf(text) {
+  return text.split(/(?<=[。；;])|\n/).map(s => s.replace(/\s+/g, ' ').trim()).filter(s => s.length >= 8 && s.length <= 110 && !SKIP_SENT.test(s) && !fragment(s));
+}
+function pickSentences(pageNos, pages, test, max = 5) {
+  const out = [], seen = new Set();
+  for (const n of pageNos) {
+    for (const s of sentencesOf(pages[n - 1] || '')) {
+      if (!test(s)) continue;
+      const key = norm(s).slice(0, 40);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s.replace(/[。；;]$/, ''));
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+const interviewNotes = (pageNos, pages) => pickSentences(pageNos, pages, s => IV_TOPIC.test(s) && IV_DETAIL.test(s) && !/\d+\s*[%％]/.test(s));
+const formatRules = (pageNos, pages) => pickSentences(pageNos, pages, s => FMT_DETAIL.test(s) && FMT_LIMIT.test(s) && !IV_TOPIC.test(s.slice(0, 4)) && !/\d+\s*[%％]/.test(s));
+
 /* ---------- main ---------- */
 if (!OFFLINE) await fetchPrograms();
 const raw = JSON.parse(fs.readFileSync(RAW, 'utf8'));
@@ -348,6 +379,10 @@ for (const [s, name] of schoolNames.entries()) {
       if (q) Object.assign(p, q);
       const docs = documentList(p.n, pg, text.pages);
       if (docs.length) p.docs = docs;
+      const ivn = interviewNotes(pg, text.pages);
+      if (ivn.length) p.ivn = ivn;
+      const fmt = formatRules(pg, text.pages);
+      if (fmt.length) p.fmt = fmt;
     }
   }
   schools.push({name, code, region: regionOf(name), pages: text ? text.pages.length : 0});

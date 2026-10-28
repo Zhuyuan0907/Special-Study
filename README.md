@@ -1,115 +1,104 @@
 # 我的特選紀錄
 
-給大學「特殊選才」考生用的個人紀錄網站，自己架在電腦或內網就能用，資料全部存在本機。
+給大學**特殊選才**考生用的個人進度網站：投了哪些學校、每個系的報名／繳件／面試／放榜／報到／放棄截止（含時間）、備審清單、面試準備、放榜結果，一個畫面看完。自己架在電腦上，資料全部存本機。
 
-![主畫面：左邊我的學校、中間時程與月曆、右邊找科系與簡章搜尋](docs/screenshot.png)一個畫面看完：投了哪些學校、每個系的報名／面試／放榜日期、備審進度、面試筆記、放榜結果，以及 116 學年度 57 校、926 個系組的簡章全文搜尋。
+![本週畫面](docs/screenshot.png)
 
-- **找科系・搜尋簡章**：輸入「資工」「清大 電機」，或簡章裡的任何字，例如「AIS3」「金盾獎」「APCS」，都能找到相關系組，並顯示原文出現在簡章第幾頁。
-- **一鍵加入**：從搜尋結果加入後，那個系的報名、繳件、推薦函、面試、放榜、報到、放棄截止日都會排進時程，截止時間（例如 12:00、17:00）一起帶入。
-- **時程**：月曆、接下來的日期、自動提醒（快截止還沒報名、備審沒交齊、面試撞期、錄取後要決定是否就讀）。
-- **每間學校的報名系統**：學校紀錄上方直接有「網路報名系統」「學校招生網」「簡章 PDF」的連結（`data/school-links.json`）。
-- **依我的條件找科系**：勾選自己有的經歷（APCS、AIS3、科展、英檢、實驗教育…），列出簡章報名資格有提到的系，並標出符合哪幾項。
-- **備審清單來自簡章**：加入學校時，備審清單直接是該系簡章列的「指定繳交資料」。
-- **決定就讀後的放棄提醒**：決定要讀某一間之後，其他正取、備取的學校會提醒在期限內辦理放棄。
-- **行事曆訂閱**：`/api/calendar.ics` 可以加進 Apple、Google 日曆，日期自動同步，截止前一天提醒，有時間的截止再於 3 小時前提醒。
-- **紀錄存在 JSON 檔**：`data/records.json`，不需要資料庫。
+內建 116 學年度 57 校、926 個系組的整理資料與簡章全文，加入一個系之後，日期、備審清單、報名系統連結都會自動帶進來。
 
-## 給其他特選生：三步驟開始用
+## 五個畫面
+
+| 畫面 | 做什麼 |
+| --- | --- |
+| **本週** | 下一個截止的倒數、這一週七天、要做的事（照日期排，報名系統一鍵前往、按「已報名」就更新狀態）、學校進度 |
+| **學校** | 左邊一排學校，右邊照流程分段：報名與日期（報名步驟、准考證號）→ 備審 → 面試（時間、地點、當天要帶、準備重點、面試後紀錄）→ 放榜與結果（正取／備取名次／遞補紀錄／就讀或放棄）→ 簡章重點 |
+| **備審** | 所有學校一張表：哪些資料做好了、哪間先截止，勾完直接存 |
+| **行事曆** | 整個月，每天直接列出事情，每間學校一個顏色；可以加待辦 |
+| **找科系** | 搜科系、學校或簡章裡的任何字（例如 AIS3、APCS、金盾獎），右邊直接看報名資格、甄選方式、要繳的資料和簡章原文；勾選自己的經歷就能列出符合條件的系 |
+
+會自動提醒的事：報名快截止還沒報名、備審沒交齊、面試撞期、報名截止了狀態還是「準備中」、錄取後要在期限內決定、決定讀某一間之後其他學校要辦放棄。
+
+## 開始用（三步驟）
 
 1. 安裝 [Node.js](https://nodejs.org/)（18 以上）。
-2. 下載這個專案：按右上角 **Code → Download ZIP** 解壓縮，或 `git clone https://github.com/Zhuyuan0907/Special-Study.git`。
-3. 在專案資料夾打開終端機，執行：
+2. 下載這個專案：**Code → Download ZIP** 解壓縮，或 `git clone https://github.com/Zhuyuan0907/Special-Study.git`。
+3. 在專案資料夾打開終端機：
 
 ```bash
 node server.js
 # 我的特選紀錄已啟動：http://localhost:5180
 ```
 
-用瀏覽器打開 http://localhost:5180 。第一次會看到三筆示範用的範例，按「清除範例」後就是你自己的紀錄；資料存在 `data/records.json`，不會上傳到任何地方。
+用瀏覽器開 http://localhost:5180 。第一次會看到三筆範例，清掉後就是你自己的紀錄。不需要 `npm install`，系組資料和簡章全文都已經在 `data/` 裡。
 
-不需要 `npm install`：系組資料、簡章全文、各校連結都已經在 `data/` 裡。簡章 PDF 原檔沒有放進專案（110 MB），所以「簡章 PDF」按鈕預設不會出現；想要的話執行下面「更新系組與簡章資料」的指令就會下載。
+同一個 Wi-Fi 的手機、平板用畫面上印出的「內網」網址就能開。換連接埠或只允許本機：`PORT=3000 node server.js`、`HOST=127.0.0.1 node server.js`。
 
-在同一個內網的其他電腦，用畫面上印出的「內網」網址開啟。要換連接埠或只允許本機連線：
+畫面是照 MacBook 13 吋（1440×900）Chrome 全螢幕設計的，不需要捲動頁面；手機會改成單欄。快速鍵：`1`–`5` 切換畫面、`N` 新增學校、`/` 搜尋科系。
 
-```bash
-PORT=3000 node server.js
-HOST=127.0.0.1 node server.js
-```
+## 延伸功能（都在「設定」裡）
 
-畫面是針對 MacBook Pro 13 吋（1440×900）Chrome 全螢幕設計，不需要捲動頁面；視窗較小時會自動改成可以捲動的單欄。
+- **每日提醒**：每天固定時間把接下來幾天的日期和待辦推到 **Discord**（貼 webhook 網址）或 **Telegram**（bot token）。電腦睡著當天醒來會補送。
+- **同步到 Google 試算表**：在試算表的 Apps Script 貼一段程式、部署成網頁應用程式，之後紀錄一變動，所有學校的總表就自動寫進去。不用申請任何 API。
+- **行事曆**：iPhone／Mac 直接訂閱 `webcal://…/api/calendar.ics`（截止前一天和三小時前提醒）；Google 日曆用下載的 `.ics` 或 CSV 匯入（Google 的伺服器連不到家裡的電腦，所以不能用網址訂閱）。每個日期也有「加到 Google 日曆」。
+- **匯出**：一鍵複製總表貼到試算表、下載 CSV、Markdown（Notion、HackMD）、JSON 備份與還原、列印一頁總表或單一學校（含當天要帶的清單）。
+- **學測、分科的日期**會一起顯示在本週和行事曆（可關掉）。
 
-**安全提醒**：這個伺服器沒有帳號密碼，同一個網路上的人都能看到和修改你的紀錄。請只在家裡或信任的內網使用，不要把連接埠開到網際網路。
+## 資料從哪裡來、要注意什麼
+
+- 系組資料與簡章 PDF：[特殊選才網](https://sta-tw.org/bochures/)（日曆小幫手整理），僅供非商業使用。`data/programs.json` 的擷取日期會顯示在設定的「特選須知」。
+- 報名資格、簡章要求繳交的資料、面試注意事項、格式規定，都是程式從簡章全文**自動節錄**的，畫面上有標示。它們是起點，不是答案；報名前請對照簡章原文（每個系都附原文頁面）。
+- 來源資料裡部分截止時間是「00:00」，實際可能是 18:00 或 24:00，這種會顯示「時間請看簡章」。
+- 簡章 PDF 原檔（約 110 MB）沒有放進專案，所以「簡章 PDF」連結預設不會出現；執行下面的更新指令會下載。
 
 ## 資料檔
 
-| 檔案 | 內容 | 要不要上傳到 Git |
+| 檔案 | 內容 | 上傳 Git |
 | --- | --- | --- |
-| `data/records.json` | 你的個人紀錄（第一次儲存時建立） | 不要，已在 `.gitignore` |
-| `data/records.example.json` | 沒有個人紀錄時顯示的三筆範例 | 要 |
-| `data/programs.json` | 926 個系組的整理資料，以及每個系對應的簡章頁碼 | 要 |
-| `data/school-links.json` | 57 校的招生資訊網與網路報名系統網址 | 要 |
-| `data/search-terms.json` | 搜尋用的簡稱與同義詞（清大、資工…） | 要 |
+| `data/records.json` | 你的紀錄：學校、日期、備審、待辦、設定（第一次儲存時建立） | 不要（已在 `.gitignore`） |
+| `data/records.example.json` | 沒有紀錄時顯示的範例 | 要 |
+| `data/programs.json` | 926 個系組的整理資料與對應的簡章頁碼 | 要 |
 | `data/brochures/text/*.json` | 57 份簡章逐頁全文 | 要 |
-| `data/brochures/pdf/*.pdf` | 簡章 PDF 原檔（約 110 MB） | 不要，用下面的指令重新下載 |
+| `data/school-links.json` | 57 校的招生網與網路報名系統網址 | 要 |
+| `data/search-terms.json` | 搜尋用的簡稱與同義詞（清大、資工…） | 要 |
+| `data/season.json` | 學測、分科等大考日期 | 要 |
+| `data/brochures/pdf/*.pdf`、`data/raw/` | 簡章原檔與 API 原始資料 | 不要 |
 
-`records.json` 的格式：
+`records.json` 大致長這樣（`status`：`prep` 準備中、`applied` 已報名、`interview` 通過一階、`waiting` 已面試、`admitted` 正取、`waitlist` 備取、`rejected` 未錄取、`out` 一階未通過、`skipped` 沒有報名）：
 
 ```json
 {
-  "version": 1,
-  "apps": [
-    {
-      "id": "…",
-      "school": "國立清華大學",
-      "dept": "資訊工程學系A組",
-      "programId": "116-002-004",
-      "status": "prep",
-      "dates": [{"id": "…", "kind": "reg", "date": "2026-10-13", "end": "", "time": "17:00", "note": "網路報名"}],
-      "docs": [{"id": "…", "name": "自傳／個人陳述", "done": false}],
-      "notes": "", "prep": "", "asked": ""
-    }
-  ],
-  "profile": {}
+  "version": 2,
+  "apps": [{
+    "id": "…", "school": "國立清華大學", "dept": "資訊工程學系A組", "programId": "116-002-004",
+    "status": "applied", "color": 2, "regNo": "", "place": "",
+    "dates": [{"id": "…", "kind": "reg", "date": "2026-10-13", "end": "", "time": "17:00", "note": "網路報名"}],
+    "docs": [{"id": "…", "name": "自傳", "done": false}],
+    "regSteps": [{"id": "…", "name": "網路報名完成", "done": true}],
+    "kit": [{"id": "…", "name": "身分證", "done": false}],
+    "waitLog": [], "prep": "", "asked": "", "notes": "", "choice": "", "waitNo": null
+  }],
+  "todos": [{"id": "…", "text": "請老師寫推薦信", "due": "2026-11-05", "appId": "", "done": false}],
+  "profile": {"tags": ["apcs"], "notify": {"discord": "…", "time": "08:00", "days": 7}, "sheets": {"url": "…", "auto": true}}
 }
 ```
 
-`status` 可以是 `prep`（準備中）、`applied`（已報名）、`interview`（一階通過）、`waiting`（已面試）、`admitted`（正取）、`waitlist`（備取）、`rejected`（未錄取）、`out`（一階未通過）。
+API（都是 JSON）：`GET /api/records`、`PUT /api/apps/:id`、`DELETE /api/apps/:id`、`PUT /api/todos`、`PUT /api/profile`、`GET /api/search?q=`、`GET /api/brochure/:code?pages=`、`GET /api/table`（`.csv`）、`GET /api/export.md`、`GET /api/export`、`POST /api/import`、`GET /api/calendar.ics`、`GET /api/digest`、`POST /api/notify/test`、`POST /api/sheets/sync`。
 
 ## 下一個學年度怎麼更新
 
-學年度、資料日期都來自 `data/programs.json`，畫面會自動顯示。等特殊選才網放出新學年度的資料後，把 `scripts/build-data.mjs` 裡的 `YEAR` 改掉，執行 `npm run build-data`，再檢查 `data/school-links.json` 的連結還能不能用。「特選須知」裡的校數與名額數字是 116 學年度的，請一併更新 `public/index.html`。
-
-## 更新系組與簡章資料
+等特殊選才網放出新學年度的資料後，把 `scripts/build-data.mjs` 裡的 `YEAR` 改掉，執行：
 
 ```bash
-npm install            # 只需要 pdfjs-dist，用來抽出 PDF 文字
-npm run build-data     # 從特殊選才網下載最新資料與簡章，重建 data/
-npm run build-data:offline   # 不下載，只用已有的檔案重建
+npm install          # 只為了 pdfjs-dist，抽簡章文字用
+npm run build-data   # 下載系組資料與簡章 PDF，重建 data/programs.json 與簡章全文
 ```
 
-下載時每個請求之間會等待數秒，請不要調短。
+再檢查 `data/school-links.json` 的連結、更新 `data/season.json` 的大考日期。學年度會自動顯示在畫面上。
 
-## API
+## 安全提醒
 
-| 方法 | 路徑 | 說明 |
-| --- | --- | --- |
-| GET | `/api/records` | 讀取所有紀錄 |
-| PUT | `/api/apps/:id` | 新增或更新一間學校 |
-| DELETE | `/api/apps/:id` | 刪除一間學校 |
-| GET | `/api/search?q=AIS3` | 搜尋系組與簡章全文 |
-| GET | `/api/brochure/:code?pages=31,32` | 讀取簡章指定頁的文字 |
-| GET | `/api/calendar.ics` | iCalendar 訂閱（所有日期＋提醒） |
-| GET | `/api/export` | 下載備份 |
-| POST | `/api/import` | 從備份還原 |
-
-## 資料來源與聲明
-
-- 系組資料與簡章 PDF：[特殊選才網・簡章搜尋](https://sta-tw.org/bochures/)（簡章資料由日曆小幫手整理）。本專案僅供個人、非商業使用；如要大量或商業使用，請先取得特殊選才網同意。
-- 116 學年度統計數字：[大學問](https://www.unews.com.tw/News/Info/11591)。
-- 簡章頁面與系組的對應、報名資格節錄是程式自動判斷的，可能有誤。報名前一定要以各校最新簡章為準。
-- 來源資料裡的截止時間「00:00」不可靠（有的學校其實是 18:00，有的是沒寫時間），本專案一律顯示「時間請看簡章」。
-- 各校連結整理自簡章與學校網站，少數學校簡章只寫校網首頁，就只放招生資訊網。
+這個伺服器沒有帳號密碼，同一個網路上的人都能看到和修改你的紀錄，也能看到設定裡的 webhook 網址。只在家裡或信任的內網使用，不要把連接埠開到網際網路。
 
 ## 授權
 
-程式碼採 MIT 授權。簡章內容的著作權屬於各大學。
+程式碼以 [MIT](LICENSE) 授權。簡章內容與系組資料的著作權屬各大學與特殊選才網。
