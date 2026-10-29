@@ -38,9 +38,9 @@ function render() {
   </div>
   <div class="settings-pane ${pane === 'cond' ? 'on' : ''}" data-pane-body="cond">
     <h3>我的條件</h3>
-    <p>勾選你有的經歷或身分，「找科系」會列出簡章報名資格有提到的系，並標出符合哪幾項。比對的是簡章文字，只是起點。</p>
+    <p>勾選你有的經歷或身分，「找科系」會列出簡章報名資格提到它們的系。</p>
     <div class="cond-groups" id="cond-groups">${CONDITIONS.map(g => `<section class="cond-group"><h4>${esc(g.group)}</h4><div class="cond-list">${g.items.map(c => `<label class="check"><input type="checkbox" value="${c.id}" ${(S.profile.tags || []).includes(c.id) ? 'checked' : ''}>${esc(c.label)}</label>`).join('')}</div></section>`).join('')}</div>
-    <div class="row"><button class="btn fill sm" type="button" id="cond-save">儲存</button><button class="btn sm ghost" type="button" id="cond-clear">全部取消</button><span class="status" id="cond-status"></span></div>
+    <div class="row"><button class="btn fill sm" type="button" id="cond-save">儲存</button><button class="btn sm ghost" type="button" id="cond-clear">清除勾選</button><span class="status" id="cond-status"></span></div>
   </div>
   <div class="settings-pane ${pane === 'notify' ? 'on' : ''}" data-pane-body="notify">
     <h3>每日提醒</h3>

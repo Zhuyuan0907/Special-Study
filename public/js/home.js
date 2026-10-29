@@ -96,9 +96,10 @@ function taskRows() {
     else if (['interview', 'exam', 'window'].includes(k)) { row.sub = [a.place, a.status !== 'interview' && a.status !== 'waiting' ? '' : ''].filter(Boolean).join('・'); row.actions.push({label: '準備面試', view: 'schools', sec: 'interview'}); }
     else if (k === 'stage1') { row.sub = '公布後到「學校」記錄有沒有通過'; }
     else if (k === 'release') { row.sub = '放榜後到「學校」記錄結果'; }
-    else if (k === 'confirm') { if (['admitted', 'waitlist'].includes(a.status) && !a.choice) { row.sub = '還沒決定要不要讀'; row.crit = n <= 3; row.actions.push({label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}); } else if (a.choice === 'attend' && !a.confirmDone) { row.sub = '記得完成報到'; row.actions.push({label: '已報到', set: {confirmDone: true}, primary: true}); } }
+    else if (k === 'confirm') { if (!['admitted', 'waitlist'].includes(a.status)) continue; if (!a.choice) { row.sub = '還沒決定要不要讀'; row.crit = n <= 3; row.actions.push({label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}); } else if (a.choice === 'attend' && !a.confirmDone) { row.sub = '記得完成報到'; row.actions.push({label: '已報到', set: {confirmDone: true}, primary: true}); } }
     else if (k === 'giveup') { if (a.choice === 'decline' && !a.giveupDone) { row.sub = '記得交出放棄聲明'; row.crit = true; row.actions.push({label: '已辦放棄', set: {giveupDone: true}, primary: true}); } else if (going && going.id !== a.id && ['admitted', 'waitlist'].includes(a.status) && a.choice !== 'decline') { row.sub = `你要讀 ${shortName(going)}，這間也要辦放棄`; row.crit = true; row.actions.push({label: '放棄這間', set: {choice: 'decline'}, primary: true}); } else if (!['admitted', 'waitlist'].includes(a.status)) continue; }
     else if (k === 'wait' && a.status !== 'waitlist') continue;
+    else if (k === 'review' && !['waiting', 'admitted', 'waitlist', 'rejected'].includes(a.status)) continue;
     rows.push(row);
   }
   // 不受 14 天限制的提醒：報名過了還是準備中、要不要讀、放棄。

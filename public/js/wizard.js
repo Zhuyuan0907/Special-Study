@@ -90,14 +90,14 @@ function confirmHtml(p) {
   const statusText = !r ? '' : t < r.start ? `<span class="state info">${fmtDate(r.start)} 開始報名</span>` : !closed ? `<span class="state ok">報名中，${diffDays(r.end) === 0 ? '今天' : `剩 ${diffDays(r.end)} 天`}，${endText} 截止</span>` : `<span class="state muted">報名已在 ${endText} 截止</span>`;
   const same = S.apps.filter(a => a.school === p.school && a.status !== 'skipped'), mx = parseInt(p.mx, 10), warns = [];
   if (Number.isFinite(mx) && same.length >= mx) warns.push(`<b>${esc(p.school)}規定同校最多報 ${mx} 個系組</b>，你已經加了 ${same.length} 個（${same.map(a => esc(deptMain(a))).join('、')}）。請確認簡章。`);
-  if (closed) warns.push(`這個系的報名已在 <b>${endText}</b> 截止。已經報名的話，勾下面的「我已經報名了」；沒報名的話，加進來只能當參考。`);
+  if (closed) warns.push(`報名已在 <b>${endText}</b> 截止。報過名就勾「我已經報名了」；沒報名的話加進來只能當參考。`);
   return `<div class="add-step">
     <div class="add-lead"><button class="back" type="button" data-back="2">‹ 換系組</button></div>
     <div class="scroll" style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
-      <div class="confirm-card"><div class="pick-main"><div class="pick-title">${esc(p.school)} ${esc(p._main)}${qualPills(p._quals)}</div><div class="pick-sub">${[p.q != null && `名額 ${p.q}`, p.fee && `報名費 ${esc(p.fee)}`].filter(Boolean).join('・')}</div></div>${statusText}</div>
+      <div class="confirm-card"><div class="pick-main"><div class="pick-title">${esc(p.school)} ${esc(p._main)}${qualPills(p._quals)}</div><div class="pick-sub">${[p.q != null && `名額 ${p.q}`, p.fee && `報名費 ${esc(String(p.fee).replace(/元$/, ''))} 元`].filter(Boolean).join('・')}</div></div>${statusText}</div>
       ${warns.map(w => `<div class="warn-box">${w}</div>`).join('')}
       <div class="confirm-grid">
-        <section class="confirm-box"><h3>加入後會幫你建立</h3><ul class="will">
+        <section class="confirm-box"><h3>會自動建立</h3><ul class="will">
           <li><span><b>${src.dates.length} 個日期</b>，排進本週、行事曆和提醒<ul class="mini-dates">${key.map(d => `<li><span class="d">${fmtDate(d.date)}</span><span>${KINDS[d.kind].label}${d.time ? ' ' + esc(d.time) : ''}</span></li>`).join('')}</ul></span></li>
           <li><span><b>${src.docs.length} 項備審清單</b>：${src.docs.map(d => esc(d.name)).join('、')}</span></li>
           <li><span><b>甄選方式</b>：${esc(weightText(p) || '簡章未列')}</span></li>
@@ -105,7 +105,7 @@ function confirmHtml(p) {
         <section class="confirm-box"><h3>報名資格${p.qxp ? `（簡章第 ${p.qxp} 頁）` : ''}</h3><p class="qual-short">${esc(p.qx || p.tgt || '整理資料沒有列出，請看簡章原文。')}</p><button class="link" type="button" data-view-prog="${esc(p.i)}">看完整簡章</button></section>
       </div>
     </div>
-    <div class="modal-foot" style="padding:12px 0 0"><label class="check ${closed ? 'warn' : ''}"><input type="checkbox" id="add-applied" ${wiz.applied ? 'checked' : ''}>我已經報名了</label><span class="spacer"></span><button class="btn" type="button" data-back="2">上一步</button><button class="btn fill" type="button" id="add-confirm">加入我的學校</button></div>
+    <div class="modal-foot" style="padding:12px 0 0"><label class="check ${closed ? 'warn' : ''}"><input type="checkbox" id="add-applied" ${wiz.applied ? 'checked' : ''}>我已經報名了</label><span class="spacer"></span><button class="btn fill" type="button" id="add-confirm">加入</button></div>
   </div>`;
 }
 function doneHtml() {
@@ -115,8 +115,8 @@ function doneHtml() {
   return `<div class="add-step add-done">
     <h3>已加入 ${esc(appName(a))}</h3>
     <p>${a.dates.length} 個日期已排進時程${n ? `，最近的是 ${fmtDate(n.date)} ${KINDS[n.kind].label}（${cdText(diffDays(n.date))}）` : ''}。</p>
-    <p class="small">下一步：${esc(nextStep(a).text)}</p>
-    <div class="modal-foot" style="border:0;justify-content:center;padding:8px 0 0"><button class="btn" type="button" id="add-same">同一間再加一個系</button><button class="btn" type="button" id="add-other">加別間學校</button><button class="btn fill" type="button" id="add-finish">打開這間學校</button></div>
+    <p class="small">${esc(nextStep(a).text)}</p>
+    <div class="modal-foot" style="border:0;justify-content:center;padding:8px 0 0"><button class="btn" type="button" id="add-same">同校再加一系</button><button class="btn" type="button" id="add-other">加別的學校</button><button class="btn fill" type="button" id="add-finish">打開這間學校</button></div>
   </div>`;
 }
 function confirmAdd() {

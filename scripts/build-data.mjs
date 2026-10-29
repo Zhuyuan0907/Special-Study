@@ -352,7 +352,9 @@ function pickSentences(pageNos, pages, test, max = 5) {
   return out;
 }
 const interviewNotes = (pageNos, pages) => pickSentences(pageNos, pages, s => IV_TOPIC.test(s) && IV_DETAIL.test(s) && !/\d+\s*[%％]/.test(s));
-const formatRules = (pageNos, pages) => pickSentences(pageNos, pages, s => FMT_DETAIL.test(s) && FMT_LIMIT.test(s) && !IV_TOPIC.test(s.slice(0, 4)) && !/\d+\s*[%％]/.test(s));
+// 「請參閱本簡章第 13 頁」「格式請參考附表六」這種只是指路的句子不算規定。
+const FMT_REF = /參閱|參考|詳見|請見|來電|附件\s*[\d一二三四五六七八九十]|附表|第\s*\d+(-\d+)?\s*頁|洽詢|電話/;
+const formatRules = (pageNos, pages) => pickSentences(pageNos, pages, s => FMT_DETAIL.test(s) && FMT_LIMIT.test(s) && !FMT_REF.test(s) && !IV_TOPIC.test(s.slice(0, 4)) && !/\d+\s*[%％]/.test(s));
 
 /* ---------- main ---------- */
 if (!OFFLINE) await fetchPrograms();

@@ -106,7 +106,7 @@ export const todayKey = () => toKey(new Date());
 export const isKey = k => typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k);
 export const diffDays = k => Math.round((parseKey(k) - parseKey(todayKey())) / 864e5);
 export const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return toKey(d); };
-export const md = k => { const d = parseKey(k); return `${d.getMonth() + 1}/${pad(d.getDate())}`; };
+export const md = k => { const d = parseKey(k); return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`; };
 export const fmtDate = k => { const d = parseKey(k); return d.getFullYear() !== new Date().getFullYear() ? `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}` : md(k); };
 export const wd = k => '週' + '日一二三四五六'[parseKey(k).getDay()];
 export const wdShort = k => '日一二三四五六'[parseKey(k).getDay()];
@@ -377,8 +377,8 @@ export function regText(p) {
   const r = p._reg, t = todayKey();
   if (!r) return '';
   if (t < r.start) return `<span class="st-soon">${fmtDate(r.start)} 開始報名</span>`;
-  if (t <= r.end) { const n = diffDays(r.end); return `<span class="st-open">報名中・${n === 0 ? '今天' : `剩 ${n} 天`}（${fmtDate(r.end)}${r.time ? ' ' + r.time : ''} 截止）</span>`; }
-  return `<span class="st-closed">已截止（${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}）</span>`;
+  if (t <= r.end) { const n = diffDays(r.end); return `<span class="st-open">報名到 ${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}・${n === 0 ? '今天截止' : `剩 ${n} 天`}</span>`; }
+  return `<span class="st-closed">已截止 ${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}</span>`;
 }
 export function weightText(p) {
   const its = (p.it || []).filter(i => i[0]);
@@ -418,12 +418,11 @@ export function appFromProgram(p) {
   const docs = (p.docs || []).length ? p.docs.map(shortDoc) : ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件', '系所指定其他資料'];
   if (p.pf === 'Y' && !docs.some(x => /作品/.test(x))) docs.push('作品集' + (p.pfd ? `（${fmtDate(p.pfd)} 前）` : ''));
   if (p.rl && /^[暗明]/.test(p.rl) && !docs.some(x => /推薦/.test(x))) docs.push(`推薦信（${rlText(p.rl)}）`);
-  const its = (p.it || []).map(([n, w]) => n + (w != null ? ` ${w}%` : '')).join('、');
   return {
     id: uid(), school: p.school, dept: p.n, programId: p.i, status: 'prep', color: nextColor(), methods: METHODS.filter(x => m.has(x)),
     fee: feeNumber(p.fee), quota: p.q ?? null, url: /^https?:\/\//.test(p.u || '') ? p.u : '',
     dates: programDates(p), docs: docs.map(n => ({id: uid(), name: n, done: false})), regSteps: regStepsFor(p),
-    notes: [p.ph && `諮詢電話：${p.ph}`, its && `甄選：${its}`].filter(Boolean).join('\n'),
+    notes: [p.ph && `諮詢電話：${p.ph}`, p.em && `諮詢信箱：${p.em}`].filter(Boolean).join('\n'),
     place: p.loc || '', kit: DEFAULT_KIT.map(n => ({id: uid(), name: n, done: false})),
     prep: '', asked: '', choice: '', waitNo: null, confirmDone: false, giveupDone: false, createdAt: Date.now(),
   };
@@ -447,45 +446,46 @@ export function nextStep(a) {
   const when = x => `${fmtDate(x.date)}${x.time ? ' ' + x.time : ''}（${cdText(diffDays(x.date))}）`;
   const left = (a.docs || []).filter(x => !x.done).length;
   const L = schoolLinks(a.school) || {};
+  // 文案原則：日期在前、不解釋按鈕（按鈕本身就是說明）。
   switch (a.status) {
     case 'prep': {
       const reg = d(['reg']);
-      const go = L.apply ? [{label: '前往報名系統', href: L.apply}] : L.adm ? [{label: '學校招生網', href: L.adm}] : [];
-      const act = [...go, {label: '我報名了', set: {status: 'applied'}, primary: true}];
-      if (reg && reg.date >= t) return {text: `在 ${when(reg)} 前完成網路報名${left ? `，還有 ${left} 項備審要準備` : ''}。報名完按「我報名了」。`, actions: act};
-      if (reg) return {text: `這個系的報名已在 ${when(reg).replace(/（.*）/, '')} 截止。報了就按「我報名了」；沒報就按「沒有報名」，這筆會留著但不再提醒。`, actions: [{label: '我報名了', set: {status: 'applied'}, primary: true}, {label: '沒有報名', set: {status: 'skipped'}}]};
-      return {text: '確認簡章的報名日期，報名完按「我報名了」。', actions: act};
+      const go = L.apply ? [{label: '報名系統', href: L.apply}] : L.adm ? [{label: '招生網', href: L.adm}] : [];
+      const act = [...go, {label: '已報名', set: {status: 'applied'}, primary: true}];
+      if (reg && reg.date >= t) return {text: `${when(reg)} 報名截止${left ? `，備審還有 ${left} 項沒做` : ''}。`, actions: act};
+      if (reg) return {text: `報名已在 ${when(reg).replace(/（.*）/, '')} 截止。報了嗎？`, actions: [{label: '已報名', set: {status: 'applied'}, primary: true}, {label: '沒有報名', set: {status: 'skipped'}}]};
+      return {text: '還沒有報名截止日，到「報名與日期」補上。', actions: act};
     }
     case 'skipped':
-      return {tone: 'calm', text: '這間沒有報名，不會再提醒。要留著當紀錄也可以，或在「基本資料」刪除。', actions: [{label: '其實有報名', set: {status: 'applied'}}]};
+      return {tone: 'calm', text: '沒有報名，不會再提醒。', actions: [{label: '其實有報名', set: {status: 'applied'}}]};
     case 'applied': {
       const up = d(['upload', 'letter']), s1 = d(['stage1']), iv = d(['interview', 'exam', 'window']);
-      if (left && up && up.date >= t) return {text: `還有 ${left} 項備審沒完成，${when(up)} 截止。`, actions: [{label: '打開備審清單', tab: 'docs', primary: true}]};
-      if (s1 && s1.date >= t) return {text: `${when(s1)} 公布一階名單。通過就按「通過一階」。`, actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
-      if (iv && (iv.end || iv.date) >= t) return {text: `面試在 ${when(iv)}。可以先到「面試」準備。`, actions: [{label: '要面試了', set: {status: 'interview'}, primary: true}]};
-      return {text: '等學校公布一階結果。', actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
+      if (left && up && up.date >= t) return {text: `${when(up)} 繳件截止，備審還有 ${left} 項沒完成。`, actions: [{label: '備審清單', tab: 'docs', primary: true}]};
+      if (s1 && s1.date >= t) return {text: `${when(s1)} 公布一階名單。`, actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
+      if (iv && (iv.end || iv.date) >= t) return {text: `${when(iv)} 面試。`, actions: [{label: '準備面試', tab: 'interview'}, {label: '要面試了', set: {status: 'interview'}, primary: true}]};
+      return {text: '等一階結果。', actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
     }
     case 'interview': {
       const iv = d(['interview', 'exam', 'window']);
-      return {text: iv ? `面試在 ${when(iv)}${iv.time ? ' ' + iv.time : ''}。到「面試」寫準備重點，面試完按「面試完了」。` : '把面試日期加到「日期」，面試完按「面試完了」。', actions: [{label: '準備面試', tab: 'interview'}, {label: '面試完了', set: {status: 'waiting'}, primary: true}]};
+      return {text: iv ? `${when(iv)} 面試${a.place ? `・${a.place}` : ''}。` : '還沒有面試日期，到「面試」補上。', actions: [{label: '準備面試', tab: 'interview'}, {label: '面試完了', set: {status: 'waiting'}, primary: true}]};
     }
     case 'waiting': {
       const rel = d(['release']);
-      return {text: rel ? `${when(rel)} 放榜。放榜後選結果：` : '放榜後選結果：', actions: [{label: '正取', set: {status: 'admitted'}}, {label: '備取', set: {status: 'waitlist'}}, {label: '未錄取', set: {status: 'rejected'}}]};
+      return {text: rel ? `${when(rel)} 放榜。結果：` : '結果：', actions: [{label: '正取', set: {status: 'admitted'}}, {label: '備取', set: {status: 'waitlist'}}, {label: '未錄取', set: {status: 'rejected'}}]};
     }
     case 'admitted':
     case 'waitlist': {
       const cf = d(['confirm']), g = d(['giveup']);
-      const head = a.status === 'admitted' ? '恭喜正取！' : `備取${a.waitNo ? `第 ${a.waitNo} 名` : ''}。`;
+      const head = a.status === 'admitted' ? '正取！' : `備取${a.waitNo ? `第 ${a.waitNo} 名` : ''}。`;
       const other = chosenSchool();
-      if (!a.choice && other && other.id !== a.id) return {tone: 'danger', text: `你已經決定讀 ${appName(other)}。這間${a.status === 'admitted' ? '正取' : '備取'}要${g ? `在 ${when(g)} 前` : '在期限內'}辦理放棄，否則會影響其他管道。`, actions: [{label: '放棄這間', set: {choice: 'decline'}, primary: true}, {label: '改讀這間', set: {choice: 'attend'}}], wait: a.status === 'waitlist'};
-      if (!a.choice) return {text: `${head}${cf ? `在 ${when(cf)} 前決定要不要讀。` : '決定要不要讀。'}`, actions: [{label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}], wait: a.status === 'waitlist'};
-      if (a.choice === 'attend') return {tone: 'calm', text: a.confirmDone ? '已完成報到，恭喜！' : `記得${cf ? `在 ${when(cf)} 前` : ''}完成聲明就讀或報到。`, check: ['confirmDone', '已完成報到'], actions: [{label: '改變決定', set: {choice: ''}}], wait: a.status === 'waitlist'};
+      if (!a.choice && other && other.id !== a.id) return {tone: 'danger', text: `你決定讀 ${appName(other)}，這間要${g ? `在 ${when(g)} 前` : '在期限內'}辦理放棄，否則會影響其他管道。`, actions: [{label: '放棄這間', set: {choice: 'decline'}, primary: true}, {label: '改讀這間', set: {choice: 'attend'}}], wait: a.status === 'waitlist'};
+      if (!a.choice) return {text: `${head}${cf ? `${when(cf)} 前決定讀不讀。` : '決定讀不讀。'}`, actions: [{label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}], wait: a.status === 'waitlist'};
+      if (a.choice === 'attend') return {tone: 'calm', text: a.confirmDone ? '已報到。' : `${cf ? `${when(cf)} 前` : ''}完成聲明就讀或報到。`, check: ['confirmDone', '已完成報到'], actions: [{label: '改變決定', set: {choice: ''}}], wait: a.status === 'waitlist'};
       return {tone: 'danger', text: `放棄要在${g ? ` ${when(g)} 前` : '學校規定期限內'}辦理，否則不能參加繁星、申請入學和分發入學。`, check: ['giveupDone', '已交出放棄聲明'], actions: [{label: '改變決定', set: {choice: ''}}]};
     }
     case 'rejected':
     case 'out':
-      return {tone: 'calm', text: '這間沒有錄取。下一間會更好！', actions: []};
+      return {tone: 'calm', text: a.status === 'out' ? '一階未通過。' : '未錄取。', actions: []};
   }
   return {text: '', actions: []};
 }

@@ -97,9 +97,9 @@ export function renderFinder() {
   const rows = mergeRows(list), shown = rows.slice(0, fd.limit);
   let html = bySchool(shown).map(g => { const seen = new Map(); return `<div class="r-school"><span>${esc(g.school)}</span><span>${g.rows.reduce((s, r) => s + r.items.length, 0)}</span></div>${g.rows.map(r => rowHtml(r, hits, seen)).join('')}`; }).join('');
   if (rows.length > shown.length) html += `<div style="padding:10px 0;text-align:center"><button class="btn sm" type="button" id="show-more">再顯示 ${Math.min(40, rows.length - shown.length)} 個（還有 ${rows.length - shown.length}）</button></div>`;
-  if (!list.length) html = `<div class="empty">${fd.q.trim() ? `找不到「${esc(fd.q.trim())}」。` : '沒有符合的系組。'}試試更短的字，或取消篩選${matchOn() ? '、關掉「符合我的條件」' : ''}。</div>`;
+  if (!list.length) html = `<div class="empty">${fd.q.trim() ? `沒有「${esc(fd.q.trim())}」的結果。` : '沒有符合的系組。'}試試更短的字，或取消篩選。</div>`;
   const general = fd.q.trim() && fd.search ? fd.search.general.filter(g => !fd.region || (P.schools.find(s => s.code === g.code) || {}).region === fd.region) : [];
-  if (general.length) html += `<div class="general"><h4>簡章其他頁面也提到（總則、名額表…）</h4>${general.slice(0, 10).map(g => { const u = pdfUrl(g.code, g.page); const inner = `<b>${esc(g.school)} p.${g.page}</b>${snippetHtml(g.snippet)}`; return u ? `<a href="${u}" target="_blank" rel="noopener">${inner}</a>` : `<div>${inner}</div>`; }).join('')}</div>`;
+  if (general.length) html += `<div class="general"><h4>簡章其他頁面也有</h4>${general.slice(0, 10).map(g => { const u = pdfUrl(g.code, g.page); const inner = `<b>${esc(g.school)} p.${g.page}</b>${snippetHtml(g.snippet)}`; return u ? `<a href="${u}" target="_blank" rel="noopener">${inner}</a>` : `<div>${inner}</div>`; }).join('')}</div>`;
   box.innerHTML = html;
 }
 let ctl = null;
