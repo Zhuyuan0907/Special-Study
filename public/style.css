@@ -194,11 +194,11 @@ main { height: calc(100vh - var(--nav)); min-height: 560px; }
 .sday-h { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--ink-2); }
 .sday-h b { font-size: 15px; font-weight: 600; color: var(--ink); }
 .sday.today .sday-h b { color: var(--accent); }
-.sitem { display: flex; align-items: baseline; gap: 5px; font-size: 13px; line-height: 1.35; min-width: 0; cursor: pointer; }
-.sitem .dot { align-self: center; }
-.sitem .s { font-weight: 600; color: var(--hue); white-space: nowrap; }
-.sitem .k { color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
-.sitem .t { color: var(--ink-3); white-space: nowrap; font-size: 12px; }
+.sitem { display: block; font-size: 13px; line-height: 1.35; min-width: 0; cursor: pointer; overflow-wrap: anywhere; }
+.sitem .dot { display: inline-block; vertical-align: 2px; margin-right: 4px; }
+.sitem .s { font-weight: 600; color: var(--hue); }
+.sitem .k { color: var(--ink-2); }
+.sitem .t { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
 .sitem.todo .s { color: var(--ink); }
 .sitem:hover .k { color: var(--ink); }
 .smore { font-size: 12px; color: var(--ink-3); }

@@ -348,9 +348,20 @@ export function splitName(n) {
   return {main, quals: quals.filter(Boolean)};
 }
 export const deptMain = a => splitName(a.dept || '').main || a.dept || '';
-// 學校簡稱：國立臺灣師範大學 → 臺灣師範大學；用在行事曆和窄的地方。
+// 學校簡稱：先用 data/search-terms.json 的簡稱（師大、政大、市北…），沒有的就去掉「國立」「大學」。
+const shortCache = new Map();
+export const resetShortNames = () => shortCache.clear();
 export function shortSchool(name) {
-  return String(name || '').replace(/^國立|^私立|^臺北市立|^市立/, '').replace(/大學$/, '').replace(/科技$/, '科技') || name;
+  name = String(name || '');
+  if (!name) return '';
+  if (shortCache.has(name)) return shortCache.get(name);
+  const aliases = Object.entries(P.terms.aliases || {}).filter(([, full]) => full === name).map(([a]) => a);
+  const inName = aliases.filter(a => name.includes(a)).sort((x, y) => x.length - y.length);
+  const byLen = [...aliases].sort((x, y) => x.length - y.length);
+  let s = inName[0] || byLen[0] || name.replace(/^國立|^私立|^市立/, '').replace(/大學$/, '');
+  if (s.length < 2) s = name.replace(/大學$/, '') || name;
+  shortCache.set(name, s);
+  return s;
 }
 export const qualPills = quals => quals.map(q => `<span class="tag">${esc(q)}</span>`).join('');
 // 同一個系在幾個招生組別招生，列表上合成一列。
@@ -503,6 +514,7 @@ export async function loadPrograms() {
   if (meta) { P.year = meta.year; P.pdf = new Set(meta.pdfSchools || []); }
   if (season && Array.isArray(season.events)) P.season = season.events;
   if (terms) P.terms = {synonyms: terms.synonyms || {}, aliases: terms.aliases || {}};
+  resetShortNames();
   if (links) P.links = links.schools || {};
   P.schools = d.schools;
   P.fetched = d.fetched;

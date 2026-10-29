@@ -49,9 +49,9 @@ function renderHero() {
 
 function renderStrip() {
   const days = weekDays(wk.offset), t = todayKey();
-  const evs = liveEvents();
   const byDay = {};
-  for (const ev of evs) {
+  // 同校同日的幾個截止合成一項（報名 17:00・繳費截止）
+  for (const ev of mergeDeadlines(liveEvents())) {
     (byDay[ev.date] ||= []).push({ev});
     if (ev.end && ev.end !== ev.date) (byDay[ev.end] ||= []).push({ev, end: true});
   }
@@ -68,7 +68,7 @@ function renderStrip() {
         ${shown.map(it => it.todo
           ? `<div class="sitem todo" data-todo="${esc(it.todo.id)}"><span class="dot sm" style="background:var(--ink-3)"></span><span class="k">${esc(it.todo.text)}</span></div>`
           : it.season ? `<div class="sitem season"><span class="dot sm" style="background:var(--ink-3)"></span><span class="k">${esc(it.season.label)}</span></div>`
-          : `<div class="sitem" ${hueStyle(it.ev.app)} data-app="${esc(it.ev.app.id)}"><span class="dot sm"></span><span class="s">${esc(shortName(it.ev.app))}</span><span class="k">${KINDS[it.ev.kind].label}${it.end ? '結束' : ''}</span>${it.ev.time && !it.end ? `<span class="t">${esc(it.ev.time)}</span>` : ''}</div>`).join('')}
+          : `<div class="sitem" ${hueStyle(it.ev.app)} data-app="${esc(it.ev.app.id)}"><span class="dot sm"></span><span class="s">${esc(shortName(it.ev.app))}</span> <span class="k">${it.end ? KINDS[it.ev.kind].label + '結束' : kindsTimesLabel(it.ev.kinds, it.ev.times)}</span>${it.ev.time && !it.end && sameTimes(it.ev.times) ? ` <span class="t">${esc(it.ev.time)}</span>` : ''}</div>`).join('')}
         ${items.length > shown.length ? `<div class="smore">還有 ${items.length - shown.length} 項</div>` : ''}
       </div>`;
     }).join('')}</div>`;
@@ -79,7 +79,7 @@ function taskRows() {
   const t = todayKey(), horizon = addDays(t, wk.far ? 60 : 14);
   const rows = [];
   const going = chosenSchool();
-  for (const c of clashes()) rows.push({crit: true, date: c.date, app: c.evs[0].app, title: `${mdw(c.date)} 面試撞期`, sub: c.evs.map(e => shortName(e.app)).join('、') + '。選一間去，其他的到「學校 › 面試」標記不參加', when: mdw(c.date), actions: []});
+  for (const c of clashes()) rows.push({crit: true, noSchool: true, date: c.date, app: c.evs[0].app, title: `${mdw(c.date)} 面試撞期`, sub: c.evs.map(e => shortName(e.app)).join('、') + '。選一間去，其他的到「學校 › 面試」標記不參加', when: mdw(c.date), actions: []});
   for (const ev of mergeDeadlines(upcoming(liveEvents()))) {
     const a = ev.app, f = ev.date >= t ? ev.date : ev.last, n = diffDays(f);
     if (f > horizon) continue;
@@ -131,7 +131,7 @@ function renderTasks() {
       return `<div class="task ${r.crit ? 'crit' : ''} ${r.todo && r.todo.done ? 'done' : ''}" ${r.app ? hueStyle(r.app) : ''} data-i="${i}" ${r.app ? `data-app="${esc(r.app.id)}"` : ''}>
         <span class="task-bar"></span>
         <div class="task-main">
-          <div class="task-title">${r.todo ? `<label class="check"><input type="checkbox" data-done="${esc(r.todo.id)}"></label>` : ''}${r.app && !r.todo ? `<span class="s">${esc(shortName(r.app))}</span><span class="muted">${esc(deptMain(r.app))}</span>` : ''}<b>${esc(r.title)}</b></div>
+          <div class="task-title">${r.todo ? `<label class="check"><input type="checkbox" data-done="${esc(r.todo.id)}"></label>` : ''}${r.app && !r.todo && !r.noSchool ? `<span class="s">${esc(shortName(r.app))}</span><span class="muted">${esc(deptMain(r.app))}</span>` : ''}<b>${esc(r.title)}</b></div>
           ${r.sub ? `<div class="task-sub">${esc(r.sub)}</div>` : ''}
         </div>
         <div class="task-acts">

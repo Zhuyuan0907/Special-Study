@@ -13,9 +13,9 @@ function dayItems() {
   for (const ev of liveEvents()) {
     (byDay[ev.date] ||= []).push({ev});
     if (ev.end && ev.end !== ev.date) {
-      // 期間（甄試期間、成績複查）：中間每天都標，最後一天標「結束」
-      let d = ev.date;
-      for (let i = 0; i < 60 && d < ev.end; i++) { d = nextDay(d); (byDay[d] ||= []).push({ev, mid: d !== ev.end, end: d === ev.end}); }
+      // 期間：最後一天標「結束」；只有甄試期間這種每天都要到場的，中間每天也標。
+      if (ev.kind === 'window') { let d = ev.date; for (let i = 0; i < 60 && d < ev.end; i++) { d = nextDay(d); (byDay[d] ||= []).push({ev, mid: d !== ev.end, end: d === ev.end}); } }
+      else (byDay[ev.end] ||= []).push({ev, end: true});
     }
   }
   for (const td of S.todos) if (isKey(td.due)) (byDay[td.due] ||= []).push({todo: td});
