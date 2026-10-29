@@ -7,6 +7,15 @@ export const wk = {offset: 0, far: false};
 const $ = s => document.querySelector(s);
 
 export function renderWeek() {
+  if (!S.loaded) {
+    // 紀錄還沒載入：先把七天的格子畫出來，其他地方顯示載入中。
+    $('#hero').className = 'hero quiet';
+    $('#hero').innerHTML = '<div class="hero-n">…</div><div class="hero-t"><b>載入中</b></div>';
+    renderStrip();
+    $('#tasks').innerHTML = '';
+    $('#week-right').innerHTML = '';
+    return;
+  }
   renderHero();
   renderStrip();
   renderTasks();

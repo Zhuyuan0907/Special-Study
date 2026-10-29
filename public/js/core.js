@@ -161,7 +161,8 @@ export function download(name, text, type = 'text/plain;charset=utf-8') {
 }
 
 /* ---------- 狀態 ---------- */
-export const S = {apps: [], todos: [], profile: {}};
+// loaded：紀錄載入前，各畫面顯示「載入中」而不是「還沒有學校」。
+export const S = {apps: [], todos: [], profile: {}, loaded: false};
 export const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', year: null, pdf: new Set(), terms: {synonyms: {}, aliases: {}}, links: {}, season: []};
 // 學測、分科等大考日期（data/season.json），設定裡可以關掉。
 export const seasonItems = () => S.profile.hideExams ? [] : P.season.filter(e => isKey(e.date)).map(e => ({...e, end: isKey(e.end) && e.end > e.date ? e.end : '', last: isKey(e.end) && e.end > e.date ? e.end : e.date, season: true}));
@@ -504,6 +505,7 @@ export function nextStep(a) {
 /* ---------- 載入 ---------- */
 export async function loadRecords() {
   const d = await request('GET', '/api/records');
+  S.loaded = true;
   S.apps = (d.apps || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   S.todos = Array.isArray(d.todos) ? d.todos : [];
   S.profile = d.profile || {};

@@ -41,6 +41,13 @@ export function selectSchool(id, opts = {}) {
   if (!a) { const inp = $('#i-school'); if (inp) inp.focus(); }
 }
 export const currentId = () => sv.id;
+// 科系資料晚到時，重畫目前這間學校（簡章重點、報名系統連結、報名步驟要用到）。正在輸入就不打擾。
+export function refreshSheet() {
+  if (!cur) return;
+  commitSoon.flush();
+  if ($('#sheet').contains(document.activeElement)) return;
+  if (S.apps.some(a => a.id === cur.id)) selectSchool(cur.id); else renderSheet();
+}
 
 /* ---------- 左欄 ---------- */
 export function renderSchools() {
@@ -59,8 +66,9 @@ export function renderSchools() {
       <span class="bar"></span>
       <span><span class="n">${esc(shortName(a) || '（新學校）')}${stateHtml(a)}</span><span class="d">${esc(deptMain(a) || '（還沒填學系）')}${nx && activeApp(a) ? ` · ${KINDS[nx.kind].label} ${md(f)}` : ''}</span></span>
     </button>`;
-  }).join('') : '<div class="empty"><b>還沒有學校</b>按下面的「新增學校」</div>';
+  }).join('') : S.loaded ? '<div class="empty"><b>還沒有學校</b>按下面的「新增學校」</div>' : '<div class="empty">載入中…</div>';
   if (cur) renderSheetMeta();
+  else if (!S.loaded) $('#sheet').innerHTML = '';
   else if (!S.apps.length) $('#sheet').innerHTML = '<div class="empty"><b>從簡章選學校和系</b>日期、備審清單、報名系統連結都會自動帶進來</div>';
   else if (!sv.id) $('#sheet').innerHTML = '<div class="empty">左邊選一間學校</div>';
 }

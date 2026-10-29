@@ -26,6 +26,7 @@ export function renderDocs() {
   $('#docs-sub').textContent = apps.length ? `${apps.length} 間學校・${total} 項，完成 ${done} 項。勾完會立刻存檔，名稱到「學校」裡改。` : '';
   $('#docs-tools').innerHTML = `<label class="toggle"><input type="checkbox" id="docs-undone" ${dv.undone ? 'checked' : ''}>只看沒完成的</label><span class="mtotal ${done === total && total ? 'ok' : ''}"><b>${done}</b> / ${total}</span>`;
   const box = $('#matrix');
+  if (!S.loaded) { box.innerHTML = '<div class="empty">載入中…</div>'; return; }
   if (!apps.length) { box.innerHTML = '<div class="empty"><b>還沒有備審項目</b>加入學校後，簡章要求的資料會自動列在這裡。</div>'; return; }
   const used = CATS.filter(([k]) => apps.some(x => x.a.docs.some(d => catOf(d.name) === k && (!dv.undone || !d.done))));
   box.innerHTML = `<table class="matrix"><thead><tr><th class="first">學校・繳件截止</th>${used.map(([, label]) => `<th class="cat">${label}</th>`).join('')}</tr></thead><tbody>

@@ -429,9 +429,16 @@ async function serveStatic(req, res, baseDir, relPath) {
   if (stat.isDirectory()) return serveStatic(req, res, baseDir, path.join(relPath, 'index.html'));
   const ext = path.extname(file).toLowerCase();
   const type = TYPES[ext] || 'application/octet-stream';
-  const headers = {'Content-Type': type, 'Cache-Control': ext === '.pdf' ? 'max-age=86400' : 'no-cache'};
   const compressible = ['.html', '.css', '.js', '.json', '.svg'].includes(ext);
-  if (compressible && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+  const gzip = compressible && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+  // ETag：檔案沒變就回 304，瀏覽器直接用已經下載過的（programs.json 有 2 MB，不用每次重抓）。
+  const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}${gzip ? '-gz' : ''}"`;
+  const headers = {'Content-Type': type, 'Cache-Control': ext === '.pdf' ? 'max-age=86400' : 'no-cache', ETag: etag};
+  if (String(req.headers['if-none-match'] || '').split(/\s*,\s*/).includes(etag)) {
+    res.writeHead(304, {'Cache-Control': headers['Cache-Control'], ETag: etag, ...(compressible ? {Vary: 'Accept-Encoding'} : {})});
+    return res.end();
+  }
+  if (gzip) {
     const key = file + ':' + stat.mtimeMs;
     let gz = gzCache.get(key);
     if (!gz) { gz = zlib.gzipSync(await fsp.readFile(file)); gzCache.set(key, gz); }

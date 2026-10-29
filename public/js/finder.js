@@ -207,6 +207,7 @@ function showPage(n) {
 }
 export function renderProgEmpty() {
   if (fd.pid && P.byId.get(fd.pid)) return;
+  if (!P.programs.length) { $('#prog').innerHTML = '<div class="empty">載入科系資料中…</div>'; return; }
   $('#prog').innerHTML = `<div class="empty"><b>選一個系組</b>左邊搜尋後點一個系，這裡會顯示報名資格、甄選方式、要繳的資料和簡章原文。</div>`;
 }
 

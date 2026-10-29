@@ -2,7 +2,7 @@
 import {S, P, KINDS, esc, todayKey, diffDays, fmtDate, wdShort, onChange, loadRecords, loadPrograms, upcoming, liveEvents, saving, toast, deptMain, firstDate, appName, activeApp} from './core.js';
 import {go, onView, fromHash, route} from './router.js';
 import {renderWeek, wireWeek} from './home.js';
-import {renderSchools, selectSchool, wireSchools, currentId, renderSheet} from './schools.js';
+import {renderSchools, selectSchool, wireSchools, currentId, refreshSheet} from './schools.js';
 import {renderDocs, wireDocs} from './docs.js';
 import {renderCalendar, wireCalendar, closePop} from './calendar.js';
 import {renderFinder, renderProgEmpty, openProgram, wireFinder, fd} from './finder.js';
@@ -22,7 +22,7 @@ function showView(view, params = {}) {
   if (view === 'schools') { selectSchool(params.id || currentId() || (S.apps[0] && S.apps[0].id), {sec: params.sec}); if (!currentId()) renderSchools(); }
   if (view === 'docs') renderDocs();
   if (view === 'calendar') renderCalendar();
-  if (view === 'finder') { renderFinder(); if (params.id) openProgram(params.id); else renderProgEmpty(); if (params.q != null) { fd.q = params.q; $('#q').value = params.q; } if (!params.id) setTimeout(() => $('#q').focus(), 0); }
+  if (view === 'finder') { renderFinder(); if (params.id && P.byId.has(params.id)) openProgram(params.id); else renderProgEmpty(); if (params.q != null) { fd.q = params.q; $('#q').value = params.q; } if (!params.id) setTimeout(() => $('#q').focus(), 0); }
 }
 onView(showView);
 function renderActive() {
@@ -93,7 +93,17 @@ setInterval(() => { if (!document.querySelector('dialog[open]') && route.view ==
 wireWeek(); wireSchools(); wireDocs(); wireCalendar(); wireFinder(); wireWizard(); wireSettings();
 
 /* ---------- 啟動 ---------- */
+// 先把網址指定的畫面顯示出來，資料到了再補上。科系資料（programs.json）比較大，網路慢時要好幾秒，
+// 不能等它下載完才顯示畫面。
 const first = fromHash();
-Promise.all([loadRecords(), loadPrograms()])
-  .then(() => { if (P.year) $('#brand-year').textContent = `${P.year} 學年度`; go(first.view, first.params); })
-  .catch(e => { toast('無法連到伺服器：' + e.message); go(first.view, first.params); });
+go(first.view, first.params);
+loadRecords()
+  .then(() => { if (route.view === 'schools' && !currentId()) selectSchool(route.params.id || (S.apps[0] && S.apps[0].id), {sec: route.params.sec}); })
+  .catch(e => toast('無法連到伺服器：' + e.message));
+loadPrograms()
+  .then(() => {
+    if (P.year) $('#brand-year').textContent = `${P.year} 學年度`;
+    if (route.view === 'finder' && route.params.id && fd.pid !== route.params.id) openProgram(route.params.id);
+    if (route.view === 'schools') refreshSheet();
+  })
+  .catch(e => toast('科系資料載入失敗：' + e.message));
