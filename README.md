@@ -33,6 +33,35 @@ node server.js
 
 同一個 Wi-Fi 的手機、平板用畫面上印出的「內網」網址就能開。換連接埠或只允許本機：`PORT=3000 node server.js`、`HOST=127.0.0.1 node server.js`。
 
+### 開機自動啟動（Linux）
+
+放在一直開著的 Linux 主機上，用 systemd 讓它開機自己跑、當掉自己重啟。把路徑換成你放專案的位置，存成 `/etc/systemd/system/special-study.service`：
+
+```ini
+[Unit]
+Description=Special-Study tracker (Node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/special-study
+ExecStart=/usr/bin/node /root/special-study/server.js
+Restart=always
+RestartSec=3
+Environment=PORT=5180
+Environment=HOST=0.0.0.0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now special-study   # 現在啟動，之後開機也會自動啟動
+journalctl -u special-study -f              # 看紀錄
+```
+
 畫面是照 MacBook 13 吋（1440×900）Chrome 全螢幕設計的，不需要捲動頁面；手機會改成單欄。快速鍵：`1`–`5` 切換畫面、`N` 新增學校、`/` 搜尋科系。
 
 ## 延伸功能（都在「設定」裡）
