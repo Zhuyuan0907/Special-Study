@@ -1,5 +1,5 @@
 {
-  "note": "各校 116 學年度特殊選才的招生資訊網（adm）與網路報名系統（apply）。來源：各校簡章（src: brochure）或學校網站（src: site）。2026-10-26 整理，請以各校最新公告為準。",
+  "note": "各校 116 學年度特殊選才的招生資訊網（adm）與網路報名系統（apply）。來源：各校簡章（src: brochure）或學校網站（src: site）。2026-10-26 整理（臺北大學 2026-11-02 補），請以各校最新公告為準。",
   "schools": {
     "001": {"adm": "https://aca.nccu.edu.tw/", "apply": "https://examreg.nccu.edu.tw/", "src": "site"},
     "002": {"adm": "https://adms.site.nthu.edu.tw/", "apply": null, "src": "brochure"},
@@ -13,6 +13,7 @@
     "010": {"adm": "https://admission.ntou.edu.tw/", "apply": "https://admission.ntou.edu.tw/", "src": "brochure"},
     "011": {"adm": "https://exams.ccu.edu.tw/", "apply": "https://exams.ccu.edu.tw/", "src": "brochure"},
     "012": {"adm": "https://c.nknu.edu.tw/aca/Default.aspx?GI=4", "apply": "https://sso.nknu.edu.tw/Recruit/special.aspx", "src": "brochure"},
+    "014": {"adm": "https://new.ntpu.edu.tw/admission/ntpu", "apply": "https://forms.gle/zFNUwPv3BWTEMNAt7", "src": "brochure"},
     "015": {"adm": "https://admissions.ncyu.edu.tw/", "apply": "https://admissions.ncyu.edu.tw/", "src": "brochure"},
     "016": {"adm": "https://admissions.nuk.edu.tw/index.php", "apply": "https://admissions.nuk.edu.tw/index.php", "src": "brochure"},
     "017": {"adm": "https://exam.ndhu.edu.tw/", "apply": "https://exam.ndhu.edu.tw/", "src": "brochure"},

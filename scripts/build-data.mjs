@@ -46,14 +46,17 @@ async function fetchPrograms() {
   fs.writeFileSync(RAW, JSON.stringify({fetched: new Date().toISOString().slice(0, 10), data: all}));
   console.log(`系組資料：${all.length} 筆`);
 }
+// 學校會改版簡章，所以已經有的也重新下載。網站每次給的 PDF 位元組都不同，真的有沒有改要看抽出來的文字（見 extractText）。
 async function fetchBrochures(codes) {
   fs.mkdirSync(PDF_DIR, {recursive: true});
   for (const code of codes) {
     const file = path.join(PDF_DIR, `${code}.pdf`);
-    if (fs.existsSync(file)) continue;
     const res = await fetch(`${API}/brochures/${YEAR}/${code}/download`, {headers: {'User-Agent': UA}});
-    if (res.ok) { fs.writeFileSync(file, Buffer.from(await res.arrayBuffer())); console.log(`簡章 ${code} 下載完成`); }
-    else console.log(`簡章 ${code} 無法下載（HTTP ${res.status}）`);
+    if (!res.ok) console.log(`簡章 ${code} 無法下載（HTTP ${res.status}）`);
+    else {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!fs.existsSync(file) || !buf.equals(fs.readFileSync(file))) fs.writeFileSync(file, buf);
+    }
     await sleep(2500);
   }
 }
@@ -96,9 +99,11 @@ async function extractText(code, school) {
   }
   await doc.destroy();
   const out = {code, school, year: YEAR, source: `${API}/brochures/${YEAR}/${code}/download`, pages};
+  const before = fs.existsSync(outFile) ? JSON.parse(fs.readFileSync(outFile, 'utf8')).pages : null;
   fs.mkdirSync(TEXT_DIR, {recursive: true});
   fs.writeFileSync(outFile, JSON.stringify(out));
-  console.log(`簡章 ${code} ${school}：${pages.length} 頁`);
+  if (!before) console.log(`簡章 ${code} ${school}：新的，${pages.length} 頁`);
+  else if (JSON.stringify(before) !== JSON.stringify(pages)) console.log(`簡章 ${code} ${school}：內容有更新，${pages.length} 頁`);
   return out;
 }
 
