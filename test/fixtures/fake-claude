@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+// 測試用的假 claude（CLAUDE_BIN 指到這裡；沒有副檔名，node --test test/ 才不會把它當成測試檔來跑）：照真的 claude -p 的樣子開 --mcp-config 給的 MCP 伺服器，
+// 依提示裡的指令呼叫工具，輸出 stream-json。不連網路。
+//   CALL <tool> <json>   呼叫一個工具，結果寫進回答
+//   ECHOARGS             回答裡寫出收到的參數（JSON）
+//   SLOW                 慢慢回答（測停止）
+//   FAIL                 回傳錯誤結果
+//   EXTRATOOLS           init 裡多報一個內建工具（伺服器要停掉）
+//   PROMPTECHO           回答裡寫出收到的整段提示
+'use strict';
+const {spawn} = require('node:child_process');
+const argv = process.argv.slice(2);
+if (argv[0] === 'auth' && argv[1] === 'status') { process.stdout.write(JSON.stringify({loggedIn: true, authMethod: 'fake'}) + '\n'); process.exit(0); }
+const out = m => process.stdout.write(JSON.stringify(m) + '\n');
+const arg = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let prompt = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', d => { prompt += d; });
+process.stdin.on('end', () => main().catch(e => { out({type: 'result', subtype: 'error_during_execution', is_error: true, result: String(e.message)}); process.exit(1); }));
+
+function mcpClient(cfg) {
+  const s = cfg.mcpServers.tracker;
+  const ch = spawn(s.command, s.args || [], {env: {...s.env, PATH: process.env.PATH}, stdio: ['pipe', 'pipe', 'inherit']});
+  let buf = '', seq = 0;
+  const wait = new Map();
+  ch.stdout.setEncoding('utf8');
+  ch.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); const w = wait.get(m.id); if (w) { wait.delete(m.id); w(m); } } });
+  const rpc = (method, params) => new Promise(r => { const id = ++seq; wait.set(id, r); ch.stdin.write(JSON.stringify({jsonrpc: '2.0', id, method, params}) + '\n'); });
+  return {rpc, note: method => ch.stdin.write(JSON.stringify({jsonrpc: '2.0', method}) + '\n'), close: () => ch.stdin.end()};
+}
+async function main() {
+  const model = arg('--model');
+  out({type: 'system', subtype: 'init', tools: /EXTRATOOLS/.test(prompt) ? ['Bash', 'mcp__tracker__my_schools'] : [], mcp_servers: [{name: 'tracker', status: 'connected'}], model});
+  if (/EXTRATOOLS/.test(prompt)) await sleep(3000);
+  const cfg = JSON.parse(arg('--mcp-config'));
+  const mcp = mcpClient(cfg);
+  const init = await mcp.rpc('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'fake', version: '0'}});
+  mcp.note('notifications/initialized');
+  const list = await mcp.rpc('tools/list', {});
+  let answer = `伺服器 ${init.result.serverInfo.name}，工具 ${list.result.tools.length} 個。\n`;
+  if (/ECHOARGS/.test(prompt)) answer += 'ARGS ' + JSON.stringify(argv) + '\n';
+  if (/PROMPTECHO/.test(prompt)) answer += 'PROMPT ' + JSON.stringify(prompt) + '\n';
+  let n = 0;
+  for (const m of prompt.matchAll(/^CALL (\w+) (.*)$/gm)) {
+    const input = JSON.parse(m[2]);
+    out({type: 'assistant', message: {model, content: [{type: 'tool_use', id: `t${++n}`, name: `mcp__tracker__${m[1]}`, input}]}});
+    const r = await mcp.rpc('tools/call', {name: m[1], arguments: input});
+    answer += `【${m[1]}${r.result.isError ? ' 錯誤' : ''}】\n${r.result.content[0].text}\n`;
+  }
+  mcp.close();
+  if (/FAIL/.test(prompt)) { out({type: 'result', subtype: 'error_during_execution', is_error: true, result: '假的錯誤'}); return; }
+  out({type: 'stream_event', event: {type: 'message_start', message: {model}}});
+  const chunks = answer.match(/[\s\S]{1,40}/g) || [''];
+  for (const c of chunks) {
+    out({type: 'stream_event', event: {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: c}}});
+    if (/SLOW/.test(prompt)) await sleep(400);
+  }
+  out({type: 'result', subtype: 'success', is_error: false, result: answer, usage: {input_tokens: 10, output_tokens: 20}});
+}

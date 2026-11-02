@@ -8,6 +8,7 @@ import * as calendar from './calendar.js';
 import * as money from './money.js';
 import * as add from './add.js';
 import * as settings from './settings.js';
+import * as ai from './ai.js';
 import {shortSchool, syncHeadline} from './logic.js';
 
 const VIEWS = {next, schools, calendar, money};
@@ -131,7 +132,7 @@ addEventListener('focus', back);
 document.addEventListener('visibilitychange', back);
 
 /* ---------- 啟動 ---------- */
-for (const m of [next, schools, calendar, money, add, settings]) { try { m.init && m.init(); } catch (e) { console.error(e); } }
+for (const m of [next, schools, calendar, money, add, settings, ai]) { try { m.init && m.init(); } catch (e) { console.error(e); } }
 start();
 show();
 load().then(() => { booted = true; render(); afterLoad(); }).catch(e => console.error(e));

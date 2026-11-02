@@ -1,0 +1,54 @@
+/* 問 AI（js/ai.js）：右邊的面板，蓋在畫面上（不擠動底下的版面），細線分開，不用卡片。
+   手機：整個畫面。設定 › 問 AI 那一頁用 settings.css 的列。 */
+.ai { position: fixed; top: var(--nav); right: 0; bottom: 0; z-index: 60; width: 440px; display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--line-2); }
+.ai-h { flex: none; display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 10px 0 20px; border-bottom: 1px solid var(--line); }
+.ai-h h2 { font-size: 15px; font-weight: 600; line-height: 24px; margin-right: auto; }
+.ai-ctx { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 14px 6px 20px; font-size: 13px; line-height: 20px; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+.ai-log { flex: 1; padding: 0 20px 12px; }
+.ai-setup { padding: 14px 0; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.ai-turn { padding: 14px 0 12px; }
+.ai-turn + .ai-turn { border-top: 1px solid var(--line); }
+.ai-q { font-weight: 600; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-tools { margin-top: 2px; font-size: 13px; line-height: 20px; color: var(--ink-3); overflow-wrap: anywhere; }
+.ai-st { margin-top: 6px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+/* 回答（Markdown） */
+.ai-a { margin-top: 6px; line-height: 24px; overflow-wrap: anywhere; }
+.ai-a p + p, .ai-a p + ul, .ai-a p + ol, .ai-a ul + p, .ai-a ol + p, .ai-a pre + p, .ai-a p + pre { margin-top: 8px; }
+.ai-a ul, .ai-a ol { padding-left: 1.3em; }
+.ai-a ul { list-style: disc; }
+.ai-a ol { list-style: decimal; }
+.ai-a li + li { margin-top: 2px; }
+.ai-a strong { font-weight: 600; }
+.ai-a code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 0 3px; border-radius: 3px; background: var(--bg-2); }
+.ai-a pre { padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); font: 12px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-a .link { font-size: inherit; white-space: normal; }
+/* 輸入 */
+.ai-f { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.ai-f textarea { flex: 1; min-height: 36px; max-height: 168px; padding: 6px 10px; resize: none; line-height: 22px; overflow-y: auto; }
+.ai-f .btn { height: 36px; flex: none; }
+/* 紀錄 */
+.ai-list { padding-top: 4px; }
+.ai-li { display: grid; grid-template-columns: minmax(0, 1fr) auto 24px; align-items: center; column-gap: 10px; padding: 6px 0; }
+.ai-li-t { min-width: 0; border: 0; background: none; padding: 4px 0; text-align: left; font-size: 15px; line-height: 24px; color: var(--ink); overflow-wrap: anywhere; cursor: pointer; }
+.ai-li-t:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.ai-li-d { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.ai-empty { padding: 16px 0; }
+#btn-ai[aria-expanded="true"] { color: var(--ink); font-weight: 600; }
+#btn-ai .ai-short { display: none; }
+/* 設定 › 問 AI */
+.ai-keyf input[type="password"] { width: 18em; }
+.set-v .set-inline .set-k { margin-right: 6px; }
+
+@media (max-width: 600px) {
+  body.ai-on { overflow: hidden; }
+  /* 頂欄放不下「問 AI」三個字：手機只寫 AI */
+  .nav-actions #btn-ai { padding: 0 6px; }
+  #btn-ai .ai-full { display: none; }
+  #btn-ai .ai-short { display: inline; }
+  .ai { top: 0; left: 0; width: auto; z-index: 70; border-left: 0; }
+  .ai-h { height: var(--nav); padding: 0 6px 0 16px; }
+  .ai-ctx { padding: 6px 10px 6px 16px; }
+  .ai-log { padding: 0 16px 12px; }
+  .ai-f { padding: 10px 16px 12px; }
+  .ai-keyf input[type="password"] { width: 100%; }
+}

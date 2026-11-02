@@ -16,6 +16,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const net = require('node:net');
 const {pathToFileURL} = require('node:url');
+const {createAI} = require('./server-ai.js');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -37,6 +38,7 @@ const TYPES = {
 };
 
 let L = null; // public/js/logic.js（main() 裡載入）
+let AI = null; // 問 AI（server-ai.js，main() 裡建立）
 const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isDate = k => /^\d{4}-\d{2}-\d{2}$/.test(k || '');
 const TZ = 'Asia/Taipei';
@@ -681,6 +683,9 @@ async function api(req, res, url) {
 
   if (resource === 'records' && req.method === 'GET' && !id) return sendJson(req, res, 200, records);
 
+  // 問 AI：設定、API Key、對話、提問（串流）。API Key 和對話不在 records 裡，也不在 /data 白名單裡。
+  if (resource === 'ai') return AI ? AI.handle(req, res, url, {readBody, sendJson, send}) : sendJson(req, res, 503, {error: '還沒準備好'});
+
   if (resource === 'meta' && req.method === 'GET') {
     return sendJson(req, res, 200, {...DB.meta, lan: lanAddresses(), port: server.address().port, host: HOST, recovered, example, syncLog: records.syncLog[records.syncLog.length - 1] || null});
   }
@@ -908,6 +913,8 @@ async function main() {
   loadProgramData();
   records = loadRecords();
   await prepareRecords();
+  AI = createAI({dataDir: DATA_DIR, L, DB, alias: ALIAS, search, norm, progOf, logicOpts, nowKey, getRecords: () => records,
+    selfUrl: () => `http://${HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST.includes(':') ? `[${HOST}]` : HOST}:${server.address().port}`});
   setInterval(() => notifyTick().catch(e => console.warn('提醒排程錯誤：', e.message)), 60 * 1000).unref();
   server.listen(PORT, HOST, () => {
     const port = server.address().port;

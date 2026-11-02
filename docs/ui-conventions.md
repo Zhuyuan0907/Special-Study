@@ -15,6 +15,7 @@ DESIGN.md 是規格；這份只講外框（F2）提供了什麼、畫面要怎�
 | `public/js/app.js` | 啟動、分頁、快速鍵、標題、簡章更新提示 | F2 |
 | `public/js/logic.js` | 事件模型（純函式） | F1 |
 | `public/js/{next,schools,calendar,money,add,settings}.js` | 各畫面（money.js 也畫學校頁的「花費」：`schoolBlock(app)`） | 各畫面 |
+| `public/js/ai.js`、`public/js/md.js`、`public/css/ai.css` | 問 AI：右邊的面板、設定 › 問 AI 那一頁（`settingsPane`）；md.js 是回答用的小 Markdown（純函式，先跳脫 HTML） | 問 AI |
 
 舊版（本週、備審、找科系、精靈）的模組已經拿掉，要看就看 git 歷史。
 
@@ -232,7 +233,7 @@ openDialog($('#dlg-add'));   // 一定要用這個打開，提示才看得到（
 
 ## 快速鍵（app.js 處理，畫面不要再綁）
 
-`1`／`2`／`3`／`4` 切換分頁，`N` 或 `/` 打開加學校；在行事曆：`W` 週、`M` 月、`T` 今天、`J`／`K` 或 `→`／`←` 前後翻（`calendar.key(e)`，跟 Google 日曆一樣，N 已經是加學校所以不用 N／P）；`Esc` 依序關小選單或行事曆的詳細、關對話框、取消「改」，`⌘Z`／`Ctrl+Z` 復原最近一則提示的改動。輸入框裡、「改」表單開著時、對話框開著時，這些鍵都不作用（Esc 除外）。
+`1`／`2`／`3`／`4` 切換分頁，`N` 或 `/` 打開加學校，`A` 打開／關上問 AI（ai.js 自己綁，條件和其他快速鍵一樣）；在行事曆：`W` 週、`M` 月、`T` 今天、`J`／`K` 或 `→`／`←` 前後翻（`calendar.key(e)`，跟 Google 日曆一樣，N 已經是加學校所以不用 N／P）；`Esc` 依序關小選單或行事曆的詳細、關對話框、取消「改」，`⌘Z`／`Ctrl+Z` 復原最近一則提示的改動。輸入框裡、「改」表單開著時、對話框開著時，這些鍵都不作用（Esc 除外）。
 
 ## 其他
 
@@ -264,3 +265,9 @@ node ../tools/fit.mjs "http://127.0.0.1:<port>/?now=2026-11-04T12:00#next" out.p
 - 週：七欄，每件事寫完整（時間、學校、各部分、各部分自己的時間、「名單公布後才確定」、合併的系）。今天那欄有現在的線。點月格子的日期數字到那天的週。
 - 點一件事：`#cal-pop` 在旁邊打開詳細（日期、要做的部分、起始時間、同一天面試的學校、簡章附註、狀態、報名系統、打開學校），那間學校的其他事留著、別的變淡（`.cal.focus`）。點外面、Esc、換頁、捲動就關；重畫後那件事還在就跟著它。⌘／Ctrl 點照樣在新分頁開學校。
 
+## 問 AI（頂欄「問 AI」、`A`）
+
+- 面板（`#ai`，ai.js 自己建）蓋在畫面右邊 440px，不擠動底下的版面；手機整個畫面。Esc 關（app.js 先關小選單、取消「改」；對話框開著時由對話框處理）。
+- 在 `#schools/<id>` 打開時，新對話帶著那一間（「關於 中興」），可以拿掉。回答由伺服器串流（`POST /api/ai/ask`，SSE：`start`、`tool`、`text`、`error`、`done`），一次只跑一題；按「停止」或關掉網頁就停，已經寫出來的部分會存。
+- 回答裡的連結只收 https、`/data/brochures/pdf/<code>.pdf#page=N`、`#schools/<id>`（md.js）。
+- 伺服器那邊在 `server-ai.js`：兩種接法共用同一組唯讀工具；Claude Code 接法用 `scripts/ai-mcp.js` 當 MCP 伺服器，關掉所有內建工具。API Key 存在 `data/secrets.json`，不會回給網頁。
