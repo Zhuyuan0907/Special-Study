@@ -125,6 +125,12 @@ Row = {key, appId, date, time, sortKey, type, role, kind, label, parts:[Part], r
 
 `orderApps(apps, programs, now)` → `{active, ended}` in rail order: first 報名 deadline, then createdAt.
 
+## Calendar: `calendarItems(apps, programs, now, opts)` → `{items, clashDays}`
+
+- `items`: the agenda rows (`state` `now`, `late` when overdue, `tent` when the interview still depends on a list), plus for every school that isn't `skipped`: future 名單／面試／放榜 that aren't relevant yet (`later`; prep schools, so the interview date is visible before registering; a `later` interview gets `context` 「11/30 名單公布後才確定」), and past or done milestones (`done`; same "done" rule as `timeline`). Ended schools keep only `done` items; a skipped interview is never drawn.
+- Every item has `appIds` (all programs merged into it), `name` (appName, or just the school when two programs of one school have the same thing at the same date and time), `school`, `end` (multi-day), `sortKey` (same order as the agenda).
+- `clashDays`: Map date → school names, for days where two or more different schools have an interview or exam that isn't done (prep included; two programs of one school don't count).
+
 ## School page helpers
 
 - `timeline(app, program, now, {apps, programs})` → every event, each with `milestone`, `past`, `done` (already handled: required parts ticked, ticket/intent ticked, 名單 or 放榜 answered, 報到 done, held-seat decision made, interview skipped), `next` (the first milestone not yet past and not done), and `clash:[appId]` on go rows. Show `milestone` rows by default and the rest behind 「全部 N 個日期」.

@@ -1,4 +1,4 @@
-// 網址：#next（預設）、#schools、#schools/<id>、#calendar、#calendar/2026-11、#money。
+// 網址：#next（預設）、#schools、#schools/<id>、#calendar、#calendar/2026-11（月）、#calendar/2026-11-09（週）、#money。
 // 用 pushState，所以上一頁／下一頁能在畫面之間來回；重新整理會回到同一個畫面。
 // 舊網址：#week → #next、#docs → #schools、#finder → #next 並打開加學校。
 export const VIEWS = ['next', 'schools', 'calendar', 'money'];
@@ -14,7 +14,8 @@ export function parse(hash) {
   try { arg = m && m[2] ? decodeURIComponent(m[2]) : ''; } catch { arg = ''; }
   const r = {view: 'next', id: '', month: '', open: '', pid: '', legacy: false};
   if (name === 'schools') return {...r, view: 'schools', id: arg};
-  if (name === 'calendar') return {...r, view: 'calendar', month: /^\d{4}-\d{2}$/.test(arg) ? arg : ''};
+  // month：'2026-12' 是月，'2026-12-04' 是那一天所在的週（calendar.js 決定怎麼畫）
+  if (name === 'calendar') return {...r, view: 'calendar', month: /^\d{4}-\d{2}(-\d{2})?$/.test(arg) ? arg : ''};
   if (name === 'money') return {...r, view: 'money'};
   if (name === 'docs') return {...r, view: 'schools', legacy: true};
   if (name === 'finder') return {...r, open: 'add', pid: arg, legacy: true};

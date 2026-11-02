@@ -282,16 +282,6 @@ export function init() {
   // 打到一半的值記著：每分鐘重畫或回到網頁重新載入時不會不見
   el.addEventListener('input', e => { if (V.ask && e.target.closest('[data-ask]') && e.target.name) V.ask.vals[e.target.name] = e.target.value; });
   el.addEventListener('keydown', e => { if (e.key === 'Escape' && V.ask) { e.preventDefault(); e.stopPropagation(); V.ask = null; render(); } });
-  // 行事曆的「＋N」（calendar.showInNext）：選那一天的第一列（那天沒有就下一個有事的日子），捲到中間
-  document.addEventListener('next:date', e => {
-    const d = e.detail && e.detail.date, rs = [...V.rows.values()];
-    const r = rs.find(x => x.date === d) || rs.find(x => x.date > d);
-    if (!r) return;
-    e.preventDefault();
-    select(r.key);
-    const row = $(`.nx-row[data-key="${CSS.escape(r.key)}"]`, el);
-    if (row) row.scrollIntoView({block: 'center'});
-  });
   // 右欄「准考證・時間地點」的改
   onEditSave('nxrec', (form, key) => {
     const id = key.slice(key.indexOf(':') + 1), fe = form.elements;

@@ -620,6 +620,110 @@ export function timeline(app, program, now, opts = {}) {
   if (next) next.next = true;
   return rows;
 }
+/* ---------- 行事曆 ---------- */
+// 行事曆上的每一件事：
+//   接下來的列（同一套關聯和合併）：state 'now'，逾期 'late'，還要先過名單的面試 'tent'；
+//   還沒到那個階段的里程碑：準備中的學校的名單、面試、放榜（'later'），報名的時候就看得到面試在哪天；
+//   過去的或做完的里程碑（'done'，畫灰）：做完的事不會從行事曆上消失。
+// 沒有報名（skipped）的學校不畫；結束的（沒錄取、放棄、不去面試…）只留過去的。
+// 同一間學校的兩個系組、同一天同一個時間的同一件事併成一件（中教大 資工、資工・資安外加 都是 11/16 23:59 報名）：
+//   appIds 是全部，name 只寫學校（沒併的 name 是 appName）。
+// clashDays：兩間以上不同學校的面試／考試在同一天（準備中的也算：報名前就要知道撞期），只算還沒過、還沒放棄的。
+const CAL_LATER = new Set(['stage1', 'go', 'release']);
+const CAL_PAST = new Set(['reg', 'stage1', 'notice', 'ticket', 'go', 'release', 'confirm', 'giveup', 'intent', 'waitcheck']);
+function calGroup(app, g, evs, state) {
+  const e0 = evs[0];
+  let parts = [];
+  if (g === 'reg') {
+    const byKey = new Map();
+    for (const e of evs) for (const pt of e.parts) {
+      const cur = byKey.get(pt.key);
+      if (!cur || (pt.key === 'docs' && pt.kind === 'upload') || (pt.key === 'pay' && pt.kind === 'pay') || (pt.key === 'letter' && pt.kind === 'letter')) byKey.set(pt.key, {...pt});
+    }
+    parts = [...byKey.values()].sort((a, b) => PART_ORDER[a.key] - PART_ORDER[b.key]);
+  }
+  const times = (g === 'reg' ? parts.filter(pt => !pt.mail && !pt.opt) : evs).map(e => e.time).filter(Boolean).sort();
+  const mail = g === 'reg' && !times.length ? ((parts.find(pt => pt.mail && !pt.opt) || {}).mail || '') : '';
+  return {key: `${app.id}|${e0.date}|${g}|${state}`, appId: app.id, date: e0.date, time: times[0] || '', mail, type: TYPE_OF[g] || e0.type, role: g, kind: e0.kind,
+    label: g === 'reg' ? parts.map(pt => pt.name).join('・') : [...new Set(evs.map(e => e.label))].join('・'),
+    parts, rowIds: evs.map(e => e.rowId), from: '', fromTime: '', note: [...new Set(evs.map(e => e.note).filter(Boolean))].join('；'), actions: [], state};
+}
+export function calendarItems(apps, programs, now, opts = {}) {
+  const c = clock(now), get = progIndex(programs);
+  apps = (apps || []).filter(a => a && typeof a === 'object');
+  const ag = agenda(apps, get, c, opts);
+  const {active, ended} = orderApps(apps, get, c);
+  const rank = new Map([...active, ...ended].map((a, i) => [a.id, i]));
+  const ctx = new Map(apps.map(a => [a.id, appCtx(a, get(a.programId), c, opts)]));
+  const seen = new Set();
+  const raw = [];
+  for (const r of ag.rows) {
+    if (!ctx.has(r.appId) || ctx.get(r.appId).app.status === 'skipped') continue;
+    raw.push({...r, state: r.overdue ? 'late' : r.tentative ? 'tent' : 'now'});
+    for (const id of r.rowIds) seen.add(r.appId + '|' + id);
+  }
+  for (const app of apps) {
+    if (app.status === 'skipped') continue;
+    const x = ctx.get(app.id), st = app.status;
+    // 和學校頁時程的「做完」一樣
+    const doneOf = e => e.parts.length ? e.parts.every(pt => pt.done || pt.opt)
+      : e.role === 'go' ? !!app.ivSkip
+      : e.role === 'stage1' ? !['prep', 'applied', 'skipped'].includes(st)
+      : e.role === 'release' ? ['admitted', 'waitlist', 'rejected'].includes(st)
+      : e.role === 'confirm' ? !!app.confirmDone
+      : e.role === 'giveup' ? !!app.giveupDone || app.choice === 'keep'
+      : false;
+    const groups = new Map();
+    for (const e of x.evs) {
+      if (seen.has(app.id + '|' + e.rowId) || !CAL_PAST.has(e.role)) continue;
+      const past = e.role === 'go' ? goPassed(e, c) : passed(e.date, e.time, c, !e.time);
+      const done = past || doneOf(e);
+      // 還沒到的：只有還在進行的學校的名單、面試、放榜；不去面試的面試不畫
+      if (!done && (x.stage === 'ended' || !CAL_LATER.has(e.role) || (e.role === 'go' && app.ivSkip))) continue;
+      // 過去的面試、放榜：不去面試的那場不畫（它沒有發生）
+      if (done && e.role === 'go' && app.ivSkip) continue;
+      const state = done ? 'done' : 'later';
+      const k = `${e.date}|${GROUP(e.role)}|${state}`;
+      (groups.get(k) || groups.set(k, []).get(k)).push(e);
+    }
+    for (const [k, evs] of groups) {
+      const row = calGroup(app, k.split('|')[1], evs, k.split('|')[2]);
+      if (row.state === 'later' && row.role === 'go') {
+        const s1 = x.evs.filter(e => e.role === 'stage1' && e.date <= row.date).pop();
+        if (s1) row.context = `${md(s1.date)} 名單公布後才確定`;
+      }
+      raw.push(row);
+    }
+  }
+  // 結束日（好幾天的甄試期間）、排序、名字
+  for (const r of raw) {
+    const evs = ctx.get(r.appId).evs.filter(e => r.rowIds.includes(e.rowId));
+    r.end = r.role === 'ticket' ? '' : evs.map(e => e.end).filter(Boolean).sort().pop() || '';
+    r.sortKey = `${r.date}T${r.time || '--:--'}|${String(rank.get(r.appId) ?? 999).padStart(3, '0')}|${TYPE_ORDER[r.type] ?? 9}`;
+    r.name = appName(ctx.get(r.appId).app, apps, opts.aliases);
+    r.school = shortSchool(ctx.get(r.appId).app.school, opts.aliases);
+    r.appIds = [r.appId];
+  }
+  raw.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  // 同校兩個系組的同一件事併成一件
+  const items = [], same = new Map();
+  for (const r of raw) {
+    const sig = [r.school, r.date, r.time, r.mail, r.role, r.label, r.state, r.end, r.parts.map(pt => pt.key + (pt.done ? 1 : 0)).join()].join('|');
+    const hit = same.get(sig);
+    if (hit && !hit.appIds.includes(r.appId)) { hit.appIds.push(r.appId); hit.name = r.school; hit.rowIds = [...hit.rowIds, ...r.rowIds]; continue; }
+    same.set(sig, r);
+    items.push(r);
+  }
+  const by = new Map();
+  for (const r of items) {
+    if (r.role !== 'go' || r.state === 'done') continue;
+    const s = by.get(r.date) || by.set(r.date, new Set()).get(r.date);
+    s.add(r.school);
+  }
+  const clashDays = new Map([...by].filter(([, s]) => s.size > 1).map(([d, s]) => [d, [...s]]));
+  return {items, clashDays};
+}
+
 // 備審：準備中（或已報名但還有繳件要做）顯示清單，送出之後只顯示一行摘要。
 export function docsMode(app, program, now) {
   const c = clock(now), x = appCtx(app, program, c);

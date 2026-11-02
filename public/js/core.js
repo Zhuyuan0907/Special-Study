@@ -97,6 +97,8 @@ export const nextOf = app => L.nextStep(app, programOf(app), now(), lopts());
 export const timelineOf = app => L.timeline(app, programOf(app), now(), lopts());
 export const eventsFor = (app, opts) => L.eventsOf(app, programOf(app), lopts(opts));
 export const clashNow = () => L.clashes(S.apps, P.byId, now(), lopts());
+// 行事曆：接下來的列＋還沒到那個階段的里程碑＋過去／做完的（logic.calendarItems）
+export const calendarNow = () => L.calendarItems(S.apps, P.byId, now(), lopts());
 // 花費的每一行（自動的報名費＋自己記的），新的在上面
 export const expensesNow = () => L.expenseLines(S.apps, S.expenses, P.byId, lopts());
 export const actx = app => ({now: now(), apps: S.apps, program: programOf(app), programs: P.byId, uid});

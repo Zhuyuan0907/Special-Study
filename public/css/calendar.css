@@ -1,54 +1,128 @@
-/* 行事曆（js/calendar.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
-   月曆填滿畫面：週數（4–6）平分高度，格子放不下的由 calendar.js 量過後收成「＋N」，所以格子裡的字不會被切掉。 */
-#view-calendar { padding: 18px 36px 20px; }
+/* 行事曆（js/calendar.js）的樣式。共用的色彩、字級、按鈕在 ../style.css；規則見 docs/ui-conventions.md。
+   月：週數（4–6）平分高度，一件事一行（放不下先換短的寫法，再換行），格子滿了由 calendar.js 收成「還有 N 件」。
+   週：七欄，每件事寫完整。三種深淺：要做的（正常）、還沒到那個階段的（淡）、過去或做完的（灰）。 */
+#view-calendar { padding: 14px 36px 16px; }
 .cal { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.cal-h { display: flex; align-items: center; gap: 16px; flex: none; margin-bottom: 12px; }
-.cal-h h1 { font-size: 20px; line-height: 32px; font-weight: 600; min-width: 7.2em; white-space: nowrap; }
+.cal-h { display: flex; align-items: center; gap: 16px; flex: none; margin-bottom: 10px; }
+.cal-h h1 { font-size: 20px; line-height: 32px; font-weight: 600; min-width: 8.4em; white-space: nowrap; }
 .cal-nav { display: flex; align-items: center; gap: 2px; }
 .cal-nav .btn { margin-left: 8px; }
-.cal-sub { margin-left: auto; }
+.cal-mode { display: flex; margin-left: auto; }
+.cal-mode .btn { min-width: 44px; border-radius: 0; color: var(--ink-2); font-weight: 400; }
+.cal-mode .btn:first-child { border-radius: var(--r) 0 0 var(--r); }
+.cal-mode .btn:last-child { border-radius: 0 var(--r) var(--r) 0; margin-left: -1px; }
+.cal-mode .btn[aria-pressed="true"] { background: var(--bg-3); color: var(--ink); font-weight: 600; }
+.cal-sub { margin-left: -8px; }
+.cal-empty { display: none; }
+
+/* ---------- 月 ---------- */
 .cal-wd, .cal-g { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .cal-wd { flex: none; font-size: 12px; line-height: 18px; color: var(--ink-3); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .cal-wd span { padding: 0 8px; }
+.cal-wd span:first-child { padding-left: 0; }
 .cal-g { flex: 1; min-height: 0; grid-template-rows: repeat(var(--weeks, 6), minmax(0, 1fr)); }
-.cal-empty { display: none; }
 
-/* 一天 */
-.cd { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 4px 6px 3px 8px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cd { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 3px 6px 3px 8px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); }
 .cd:nth-child(7n + 1) { border-left: 0; padding-left: 0; }
 .cd-h { display: flex; align-items: baseline; gap: 6px; flex: none; font-size: 13px; line-height: 18px; }
-.cd-n { color: var(--ink-2); }
+.cd-n { padding: 0 4px; margin: 0 -4px; border: 0; border-radius: 4px; background: none; font: inherit; color: var(--ink-2); }
+.cd-n:hover { background: var(--bg-2); color: var(--ink); }
 .cd.past .cd-n, .cd.out .cd-n { color: var(--ink-3); }
 .cd.today .cd-n, .cd-today { color: var(--accent); font-weight: 600; }
 .cd-today { font-size: 12px; }
 .cd-w { display: none; }
 .cd-x { margin-left: auto; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.cd-i { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.cd-i { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1px; margin-top: 1px; }
 
-/* 一件事：時間、學校（學校顏色）、事情。要做的、要去的用正常的字；名單、放榜用次要灰；還要先過名單的面試再淡一點；逾期用強調色。 */
-.ci { display: block; flex: none; font-size: 13px; line-height: 18px; padding: 0 4px; margin: 0 -4px; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
-a.ci:hover { background: var(--tint); }
+/* 一件事：時間、學校（學校顏色）、事情 */
+.ci { display: block; flex: none; font-size: 13px; line-height: 18px; padding: 0 4px; margin: 0 -4px; border-radius: 4px; color: var(--ink); white-space: nowrap; overflow: hidden; }
+a.ci:hover, .ci.cur { background: var(--tint); }
 .ci-t { color: var(--ink-2); }
-.ci-l { word-break: keep-all; }
-.ci.check .ci-l { color: var(--ink-2); }
-.ci.tent .ci-l, .ci.tent .ci-t { color: var(--ink-3); }
-.ci.late .ci-l, .ci.late .ci-t { color: var(--accent); }
+.ci .v-short { display: none; }
+.ci.s1 .v-full { display: none; }
+.ci.s1 .v-short { display: inline; }
+.ci.wrap { white-space: normal; overflow-wrap: anywhere; }
+.ci.wrap .ci-l { word-break: keep-all; }
 .ci.season { color: var(--ink-3); }
+
+/* 深淺（月和週一樣）：名單・放榜是次要灰；還沒到的、要先過名單的淡；過去・做完的全灰；逾期強調色 */
+.ci.check .ci-l, .wi.check .wi-l { color: var(--ink-2); }
+.ci.later .ci-l, .ci.later .ci-t, .ci.tent .ci-l, .ci.tent .ci-t,
+.wi.later .wi-l, .wi.later .wi-t, .wi.tent .wi-l, .wi.tent .wi-t { color: var(--ink-3); }
+.ci.later .sch, .ci.tent .sch, .wi.later .sch, .wi.tent .sch { color: color-mix(in srgb, var(--hue, var(--ink)) 62%, var(--bg)); }
+.ci.done, .ci.done .sch, .ci.done .ci-t, .ci.done .ci-l,
+.wi.done .sch, .wi.done .wi-t, .wi.done .wi-l { color: var(--ink-3); }
+.ci.late .ci-l, .ci.late .ci-t, .wi.late .wi-l, .wi.late .wi-t { color: var(--accent); }
 .cd-more { flex: none; align-self: flex-start; font-size: 12px; line-height: 18px; }
 
-/* 視窗不夠大：整頁捲動，格子跟著內容長高，全部列出來 */
+/* 打開一件事的詳細時：那間學校的事留著，別的變淡 */
+.cal.focus [data-k]:not(.hl), .cal.focus .season { opacity: .3; }
+.cal [data-k], .cal .season { transition: opacity .12s; }
+
+/* ---------- 週 ---------- */
+.wk { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wk-h, .wk-b { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.wk-h { flex: none; border-bottom: 1px solid var(--line); }
+.wk-d { display: flex; align-items: baseline; gap: 6px; padding: 0 8px 8px; border-left: 1px solid transparent; min-width: 0; }
+.wk-d:first-child { padding-left: 0; }
+.wk-w { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.wk-n { font-size: 20px; line-height: 30px; font-weight: 600; color: var(--ink-2); }
+.wk-d.past .wk-n { color: var(--ink-3); }
+.wk-d.today .wk-n, .wk-d.today .wk-w { color: var(--accent); }
+.wk-b { flex: 1; min-height: 0; grid-template-rows: minmax(100%, auto); }
+.wk-c { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 12px 8px 16px; border-left: 1px solid var(--line); }
+.wk-c:first-child { border-left: 0; padding-left: 0; }
+.wk-cl { display: none; }
+
+.wi { display: block; padding: 4px 6px; margin: -4px -6px; border-radius: 4px; color: var(--ink); min-width: 0; }
+a.wi:hover, .wi.cur { background: var(--tint); }
+.wi-1 { display: flex; align-items: baseline; gap: 6px; font-size: 13px; line-height: 20px; min-width: 0; flex-wrap: wrap; }
+.wi-t { color: var(--ink-2); white-space: nowrap; }
+.wi .sch { font-size: 15px; line-height: 22px; white-space: normal; }
+.wi-l { font-size: 15px; line-height: 22px; word-break: keep-all; overflow-wrap: anywhere; }
+.wi-l .pt.did { color: var(--ink-3); }
+.wi-x { font-size: 13px; line-height: 20px; color: var(--ink-3); overflow-wrap: anywhere; }
+.wi.season .wi-l { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+/* 現在：今天那欄，過了的和還沒到的中間 */
+.now-line { position: relative; flex: none; height: 2px; margin: -7px 0 -7px 6px; background: var(--accent); border-radius: 1px; }
+.now-line::before { content: ""; position: absolute; left: -6px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+/* ---------- 詳細 ---------- */
+.cal-pop { position: fixed; z-index: 70; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow-y: auto; padding: 12px 16px 14px; border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--bg); box-shadow: var(--shadow-sm); outline: none; }
+.pop-h { display: flex; align-items: baseline; gap: 8px; margin-right: -8px; }
+.pop-h .sch { font-size: 20px; line-height: 30px; }
+.pop-day { font-size: 15px; line-height: 30px; font-weight: 600; }
+.pop-dept { flex: 1; min-width: 0; font-size: 15px; line-height: 24px; color: var(--ink-2); }
+.pop-dept .link { color: inherit; }
+.pop-h .icon-btn { align-self: center; width: 28px; height: 28px; }
+.pop-h .icon { width: 16px; height: 16px; }
+.pop-when { margin-top: 6px; font-size: 15px; line-height: 24px; }
+.pop-what { font-size: 15px; line-height: 24px; font-weight: 600; word-break: keep-all; overflow-wrap: anywhere; }
+.pop-what .pt.did { color: var(--ink-3); font-weight: 400; }
+.pop-x { font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.pop-note { margin-top: 6px; }
+.pop-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.pop-st { margin-right: auto; font-size: 13px; color: var(--ink-3); }
+.pop-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+
+/* ---------- 視窗不夠大：整頁捲動，格子跟著內容長高，全部列出來 ---------- */
 @media (max-width: 1180px), (max-height: 620px) {
   #view-calendar { padding: 16px 24px 24px; }
   .cal { height: auto; }
   .cal-g { grid-template-rows: none; grid-auto-rows: minmax(96px, auto); }
   .cd-i { flex: none; overflow: visible; }
+  .ci { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .ci .ci-l { word-break: keep-all; }
+  .wk-b { grid-template-rows: none; }
+  .wk-c { min-height: 240px; }
 }
 
-/* 窄（手機、直放的平板）：七欄太擠，改成一天一列，只列這個月有事情的日子 */
+/* ---------- 窄（手機、直放的平板）：一天一列，月只列有事情的日子，週列七天 ---------- */
 @media (max-width: 760px) {
-  .cal-h { gap: 8px; margin-bottom: 4px; }
-  .cal-h h1 { min-width: 0; }
+  .cal-h { flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .cal-h h1 { min-width: 0; width: 100%; }
   .cal-nav .btn { margin-left: 4px; }
+  .cal-sub { margin-left: 0; }
   .cal-wd { display: none; }
   .cal-g { display: block; border-top: 1px solid var(--line); }
   .cd, .cd:nth-child(7n + 1) { display: grid; grid-template-columns: 6.6em minmax(0, 1fr); column-gap: 12px; padding: 10px 0; border-left: 0; }
@@ -60,7 +134,18 @@ a.ci:hover { background: var(--tint); }
   .cd-x { margin-left: 0; font-size: 13px; line-height: 20px; }
   .cd-i { margin-top: 0; gap: 4px; }
   .ci { font-size: 15px; line-height: 24px; }
+  .ci .v-short { display: none !important; }
+  .ci .v-full { display: inline !important; }
   .cal-empty { display: block; padding-top: 16px; }
+
+  .wk-h { display: none; }
+  .wk-b { display: block; border-top: 1px solid var(--line); }
+  .wk-c, .wk-c:first-child { position: relative; gap: 12px; min-height: 44px; padding: 10px 0 10px calc(6.6em + 12px); border-left: 0; border-bottom: 1px solid var(--line); }
+  .wk-cl { display: flex; flex-direction: column; position: absolute; left: 0; top: 10px; font-size: 15px; line-height: 24px; color: var(--ink-2); white-space: nowrap; }
+  .wk-cl .cd-x { font-size: 13px; line-height: 20px; }
+  .wk-c.today .wk-cl { color: var(--accent); font-weight: 600; }
+  .wk-c.none .wk-cl { color: var(--ink-3); }
+  .now-line { margin: 0; }
 }
 @media (max-width: 600px) {
   #view-calendar { padding: 8px 16px 24px; }

@@ -111,7 +111,7 @@ wireEdit();
 const inField = el => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (closeMenu()) { e.preventDefault(); return; }
+    if (closeMenu() || calendar.closePop()) { e.preventDefault(); return; }
     if ($('dialog[open]')) return;                         // 對話框自己會關
     if (editKey()) { e.preventDefault(); closeEdit(); }
     return;
@@ -119,6 +119,8 @@ document.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return;
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !inField(document.activeElement) && !editKey()) { if (undoLast()) e.preventDefault(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || inField(document.activeElement) || $('dialog[open]') || editKey()) return;
+  // 行事曆：W 週、M 月、T 今天、J／K 或 ←／→ 前後翻（跟 Google 日曆一樣；N 已經是加學校）
+  if (route.view === 'calendar' && !e.shiftKey && calendar.key(e)) { e.preventDefault(); return; }
   const i = ['1', '2', '3', '4'].indexOf(e.key);
   if (i >= 0) { e.preventDefault(); go({view: ['next', 'schools', 'calendar', 'money'][i]}); }
   else if (e.key === 'n' || e.key === 'N' || e.key === '/') { e.preventDefault(); ready.then(() => add.open()); }
