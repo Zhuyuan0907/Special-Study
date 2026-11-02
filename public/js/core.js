@@ -82,7 +82,10 @@ export function nextColour() {
   for (let i = 0; i < PALETTE; i++) if (!used.includes(i)) return i;
   return S.apps.length % PALETTE;
 }
-export const shortName = app => app ? L.shortSchool(app.school, P.aliases) : '';
+// 學校的名字：簡稱；同一間學校加了兩個系組才加系（「宜大 資工・資安組」），列、同天、提示、行事曆都用它。
+export const shortName = app => app ? L.appName(app, S.apps, P.aliases) : '';
+// 只有簡稱：旁邊已經寫了系的地方（學校清單、右欄標題、已加入提示）用這個，系才不會寫兩次。
+export const schoolName = app => app ? L.shortSchool(app.school, P.aliases) : '';
 export const deptName = app => app ? L.shortDept(app.dept || '') : '';
 // logic.js 的共用參數（其他學校、簡稱、連結、學測成績日期）：每個畫面都傳一樣的，算出來才會一致。
 export const lopts = extra => ({apps: S.apps, programs: P.byId, aliases: P.aliases, links: P.links, schools: P.schools, season: P.season, ...extra});
@@ -283,8 +286,10 @@ async function flush(id, q) {
       // 別的分頁或手機先改過：用伺服器的版本重做一次還沒確認的改動
       if (++conflicts > 3) {
         putLocal(cur); q.fns = []; rerender();
+        // 先清掉「重試中」再顯示訊息；不然迴圈後面的 setFailing 會把這個訊息也清掉
+        setFailing('app:' + id, false);
         setBar('save', {msg: `${shortName(cur)} 的改動沒有存到，已換成最新的資料`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
-        break;
+        return;
       }
       let base = cur;
       for (const f of q.fns) { try { base = applyFn(f, base); } catch (e) { console.error(e); } }
@@ -294,11 +299,13 @@ async function flush(id, q) {
       continue;
     }
     if (res.status === 409) { q.fns = []; stale(res.msg); break; }
+    // 4xx（例如 410：別的分頁或裝置已經刪掉這間）：不再重試，重新載入（刪掉的就從畫面上拿掉），留著訊息
     if (res.status >= 400 && res.status < 500) {
       q.fns = [];
+      setFailing('app:' + id, false);
       setBar('save', {msg: `沒有存到：${res.msg}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
       refresh({force: true});
-      break;
+      return;
     }
     setFailing('app:' + id, true);
     await nap(backoff(tries++));
@@ -312,11 +319,9 @@ export function removeApp(id, {toast: msg} = {}) {
   const i = S.apps.findIndex(a => a.id === id);
   if (i < 0) return;
   const app = S.apps[i];
+  const name = shortName(app);
   S.apps.splice(i, 1);
-  const timer = setTimeout(() => commitDelete(id), 8000);
-  pendingDelete.set(id, {app, index: i, timer});
-  rerender();
-  toast(msg || `已刪除 ${shortName(app)}`, {ms: 8000, undo: () => {
+  const undo = () => {
     const p = pendingDelete.get(id);
     if (!p) return;
     clearTimeout(p.timer);
@@ -325,7 +330,16 @@ export function removeApp(id, {toast: msg} = {}) {
     rerender();
     const q = Q.get(id);
     if (q && q.fns.length && !q.busy) q.busy = flush(id, q).finally(() => { q.busy = null; });
-  }});
+  };
+  // 8 秒後才送出；提示還在（滑鼠停在上面）就再等，「復原」按得到的時候一定有用
+  const later = ms => setTimeout(() => {
+    const p = pendingDelete.get(id);
+    if (p && toastUndo === undo) p.timer = later(500);
+    else if (p) commitDelete(id);
+  }, ms);
+  pendingDelete.set(id, {app, index: i, timer: later(8000)});
+  rerender();
+  toast(msg || `已刪除 ${name}`, {ms: 8000, undo});
 }
 async function commitDelete(id) {
   const p = pendingDelete.get(id);

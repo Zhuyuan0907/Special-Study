@@ -52,11 +52,12 @@ export function dayLabel(date, now) {
   if (n > 2 && n < 7) return `週${weekday(date)} ${md(date)}`;
   return fmtDate(date);
 }
-// 列上要顯示的時間：郵戳類永遠不顯示鐘點；沒有時間就是空字串（學校頁才寫「時間未公布」）。
+// 列上要顯示的時間：沒有時間就是空字串（學校頁才寫「時間未公布」）。
+// 郵戳類：沒有鐘點的寫「郵戳 11/16」「今天郵戳」（到當天結束）；有鐘點的那個鐘點就是期限：「03/03 12:00 前郵戳」。
 export function timeText(x, now) {
   if (!x || !x.date) return '';
   const c = clock(now);
-  if (x.mail === 'postmark') return x.date === c.date ? '今天郵戳' : `郵戳 ${md(x.date)}`;
+  if (x.mail === 'postmark') return x.time ? `${x.date === c.date ? '今天' : md(x.date)} ${x.time} 前郵戳` : x.date === c.date ? '今天郵戳' : `郵戳 ${md(x.date)}`;
   if (x.mail === 'arrive') return `${md(x.date)}${x.time ? ' ' + x.time : ''} 前寄達`;
   return x.time || '';
 }
@@ -90,10 +91,17 @@ export function splitDept(n) {
 export function shortDept(dept) {
   const {main, quals} = splitDept(dept);
   const hit = DEPT_SHORT.find(([re]) => re.test(main));
-  const m = hit ? hit[1] : main.replace(/(學士學位學程|學士班|學程|學系|系)$/, '') || main;
+  // 「資訊工程學全英語學士班」不能也縮成「資工」（淡江兩個都有）：留下全英語／英語／國際。
+  const m = hit ? hit[1] + ((/全英語|英語|國際/.exec(main) || [''])[0]) : main.replace(/(學士學位學程|學士班|學程|學系|系)$/, '') || main;
   // 一般組是預設，不寫；「資安外加組」寫成「資安外加」。
   const q = quals.filter(x => !/^一般(生)?(組)?$/.test(x)).map(x => x.replace(/外加組$/, '外加'));
   return [m, ...q].join('・');
+}
+// 畫面上的學校名字：簡稱；同一間學校加了兩個系組才在後面加系（「宜大 資工・資安組」「宜大 資工」），不然「同天：宜大、宜大」分不出來。
+export function appName(app, apps = [], aliases = {}) {
+  if (!app) return '';
+  const s = shortSchool(app.school, aliases);
+  return (apps || []).some(a => a && a.id !== app.id && shortSchool(a.school, aliases) === s) ? `${s} ${shortDept(app.dept || '')}`.trim() : s;
 }
 const nz = s => String(s || '').normalize('NFKC').replace(/\s+/g, '').replace(/…$/, '');
 // 舊版 shortDoc（政大等已經是簡章名稱的清單，要用它比對才不會重複）
@@ -113,14 +121,16 @@ function shortDocV2(t) {
 // 顯示寬度：中文 1、英數 0.5，空白不算
 const width = s => [...String(s)].reduce((n, ch) => n + (/\s/.test(ch) ? 0 : ch.charCodeAt(0) < 0x2e80 ? 0.5 : 1), 0);
 // 備審項目的短名稱（12 字寬內）：「自傳(含學習歷程描述…)」→「自傳」。完整文字另存在 full。
+const DOC_WORD_END = /(資料|證明|文件|影本|正本|成果|成績單|成績|資格|紀錄|報告|作品|表現|能力|計畫|」)$/;
 export function shortDoc(full) {
   // 簡章 PDF 抽出來的字有些是相容字（U+F9xx 的「力」「歷」），先換回一般字
-  let t = String(full || '').replace(/[\uF900-\uFAFF]/g, c => c.normalize('NFKC')).replace(/^\s*(【[^】]*】|\[[^\]]*\]|[（(]?\d+[)）.、]|[一二三四五六七八九十]+、)\s*/, '').trim();
+  // 小型標點（﹙﹚﹐﹕﹔﹑，PDF 抽出來的）也換回一般的，下面的括號、逗號規則才切得到
+  let t = String(full || '').replace(/[\uF900-\uFAFF\uFE50-\uFE6B]/g, c => c.normalize('NFKC')).replace(/^\s*(【[^】]*】|\[[^\]]*\]|[（(]?\d+[)）.、]|[一二三四五六七八九十]+、)\s*/, '').trim();
   t = t.replace(/[（(](選繳|必繳|非必繳|無則免[交繳]?|\s*\d+\s*[%％分]\s*)[)）]/g, '');
   // 在第一個括號、冒號、逗號前切；很短的括號（職）或緊接在短開頭後的括號（高中（或同等學力）…）整段拿掉再找
   let n = t;
   for (let from = 2, guard = 0; guard < 20; guard++) {
-    const re = /[（(：:，,；;]/g; re.lastIndex = from;
+    const re = /[（(：:︰，,；;]/g; re.lastIndex = from;
     const m = re.exec(n);
     if (!m) break;
     if (/[（(]/.test(m[0])) {
@@ -134,7 +144,13 @@ export function shortDoc(full) {
   if (width(n) > 12) n = n.replace(/[（(][^）)]{1,3}[)）]/g, '');
   if (width(n) > 12) n = n.replace(/本系|本校|之/g, '');
   if (width(n) > 12) { const m = /^(.{4,12}?)(、|或|及|與|和|並|暨|\/)/.exec(n); if (m) n = m[1]; }
-  while (width(n) > 12) n = n.slice(0, -1);
+  // 還是太長：先切到 12 字寬，再往前退到最近一個完整的詞尾（資料、證明、影本…，最多退 4 字），不要停在詞的中間（「…資料影」）
+  if (width(n) > 12) {
+    let cut = n;
+    while (width(cut) > 12) cut = cut.slice(0, -1);
+    for (let k = cut.length; k >= 2 && width(cut) - width(cut.slice(0, k)) <= 4; k--) if (DOC_WORD_END.test(cut.slice(0, k).trimEnd())) { cut = cut.slice(0, k); break; }
+    n = cut;
+  }
   return fit(n) || fit(t).slice(0, 12);
 }
 const OPT_RE = /選繳|非必繳|無則免|非必要/;
@@ -145,11 +161,17 @@ const withLabel = (d, label) => label + (rowNote(d) ? SEP + rowNote(d) : '');
 
 /* ---------- 簡章旗標（programs.json，data/overrides.json 由 build 併進來；沒有就用預設） ---------- */
 const SCR_FALSE_RE = /順序|准考證|應試號碼|試場|時間表/;
-const TICKET_RE = /准考證|應考證|應試號碼/;
-const PRINT_RE = /列印|下載|印/;
+// 要自己印的東西（准考證、應考證明、應試號碼、列印甄試資格審核通知）是「要做」的事。只看列名、不看附註：
+// 宜大的附註寫了「列印」，但它只是查准考證號碼。
+const isTicketLabel = t => (/准考證|應考證|應試號碼/.test(t) && /列印|下載|印/.test(t)) || /(列印|下載).{0,10}通知/.test(t);
+const ticketName = t => /通知/.test(t) && /列印|下載/.test(t) ? '印審核通知' : /應考證明/.test(t) ? '印應考證明' : /應考證/.test(t) ? '印應考證' : PART_NAME.ticket;
+const INTENT_RE = /意願|登記|填寫|備取生報到/;
+const WAITCHECK_RE = /開始遞補|遞補名單|遞補公告/;
+// 名單列是不是篩選，一列一列看：列自己的 scr → 系組 scr:false（整個系組都不篩選）→ 列名（面試順序、准考證、時間表…不是篩選）。
+// 成大（11/07 上機考試名單是篩選、11/11 准考證列印不是）、逢甲（11/30 複試名單是、12/01 面試時間表不是）兩種都有。
 function scrOf(d, p) {
   if (typeof d.scr === 'boolean') return d.scr;
-  if (p && typeof p.scr === 'boolean') return p.scr;
+  if (p && p.scr === false) return false;
   return !SCR_FALSE_RE.test(rowLabel(d));
 }
 function mailOf(d, p) {
@@ -170,10 +192,16 @@ function roleOf(d, p) {
   if (k === 'release') return 'release';
   if (k === 'confirm') return 'confirm';
   if (k === 'giveup') return 'giveup';
-  if (k === 'stage1') return scrOf(d, p) ? 'stage1' : (TICKET_RE.test(t) && PRINT_RE.test(t + rowNote(d))) ? 'ticket' : 'notice';
-  if (k === 'wait') return /意願|登記|填寫|備取生報到/.test(t) ? 'intent' : /開始遞補|遞補名單|遞補公告/.test(t) ? 'waitcheck' : 'info';
-  if (TICKET_RE.test(t) && PRINT_RE.test(t)) return 'ticket';
+  if (k === 'stage1') return scrOf(d, p) ? 'stage1' : isTicketLabel(t) ? 'ticket' : 'notice';
+  if (isTicketLabel(t)) return 'ticket';
+  if (k === 'wait') return INTENT_RE.test(t) ? 'intent' : WAITCHECK_RE.test(t) ? 'waitcheck' : 'info';
   return 'info';
+}
+// 遷移和同步配對用：同一種、而且一樣是篩選／不是篩選（名單）、一樣是意願／遞補公告（備取）的列才可能是同一列
+function matchClass(kind, label, p) {
+  if (kind === 'stage1') return 'stage1:' + (scrOf({note: label}, p) ? 's' : 'n');
+  if (kind === 'wait') return 'wait:' + (INTENT_RE.test(label) ? 'i' : WAITCHECK_RE.test(label) ? 'c' : 'x');
+  return kind;
 }
 const TYPE_OF = {reg: 'do', ticket: 'do', intent: 'do', confirm: 'do', giveup: 'do', go: 'go', stage1: 'check', notice: 'check', release: 'check', waitcheck: 'check', info: 'info'};
 function displayLabel(role, d, hasIv) {
@@ -186,7 +214,7 @@ function displayLabel(role, d, hasIv) {
     case 'giveup': return '放棄期限';
     case 'stage1': { const m = /^(.+?)名單公[布佈]/.exec(t); return m ? `公布${m[1]}名單` : t.replace(/時間$/, '') || '名單'; }
     case 'notice': return /名單公[布佈]|^面試公布/.test(t) || !t ? `公布${hasIv ? '面試' : '考試'}順序・地點` : t;
-    case 'ticket': return '印准考證';
+    case 'ticket': return ticketName(t);
     case 'intent': return /備取生報到/.test(t) ? '備取報到' : t.replace(/^備取生/, '').replace(/(截止|期限|時間)+$/, '') || '遞補意願';
     case 'waitcheck': return t.replace(/時間$/, '') || '遞補公告';
     default: return t.replace(/（非放榜）/, '') || KIND_LABEL[d.kind] || '其他';
@@ -203,7 +231,9 @@ function partsOf(d, p, mail) {
     const docsMail = (key === 'docs' || key === 'letter') ? mail : '';
     const name = key === 'docs' ? (docsMail ? '郵寄備審' : /上傳/.test(t) ? '上傳備審' : '繳件') : PART_NAME[key];
     const opt = key === 'letter' && (OPT_RE.test(t) || OPT_RE.test(String((p && p.rl) || '')));
-    return {key, name, date: d.date, time: docsMail === 'postmark' ? '' : d.time || '', mail: docsMail, opt, rowId: d.id, kind: d.kind};
+    // 郵戳為憑的部分：繳件列、推薦函列自己的鐘點就是郵戳期限（12:00 前郵戳）；報名列的鐘點是網路報名的，不是郵戳的
+    const ownRow = (key === 'docs' && k === 'upload') || (key === 'letter' && k === 'letter');
+    return {key, name, date: d.date, time: docsMail === 'postmark' && !ownRow ? '' : d.time || '', mail: docsMail, opt, rowId: d.id, kind: d.kind};
   });
 }
 const VAL = r => ({date: r.date || '', time: r.time || '', from: r.from || '', fromTime: r.fromTime || '', end: r.end || ''});
@@ -211,11 +241,13 @@ const sameVal = (a, b) => { const x = VAL(a || {}), y = VAL(b || {}); return x.d
 export const isEdited = d => d.src === 'brochure' && !!d.bro && !sameVal(d, d.bro);
 
 /* ---------- 每一個日期列 → 事件 ---------- */
+// 簡章已經刪掉的列（gone）預設不算：不上接下來、行事曆、.ics、提醒，也不決定階段、撞期、必繳的部分。
+// 學校頁「全部日期」和匯出要看到它們：傳 opts.gone = true。
 export function eventsOf(app, program, opts = {}) {
   const p = program || null;
   const done = new Map();
   for (const s of app.regSteps || []) if (s && s.key) done.set(s.key, done.get(s.key) || !!s.done);
-  const rows = (app.dates || []).filter(d => d && isKey(d.date));
+  const rows = (Array.isArray(app.dates) ? app.dates : []).filter(d => d && isKey(d.date) && (!d.gone || (opts && opts.gone)));
   const hasIv = rows.some(d => d.kind === 'interview') || !rows.some(d => d.kind === 'exam');
   // 自己記的面試時間（紀錄）蓋過簡章的；有面試列就套在面試，否則套在筆試。
   const ivKind = rows.some(d => d.kind === 'interview') ? 'interview' : 'exam';
@@ -226,7 +258,8 @@ export function eventsOf(app, program, opts = {}) {
     if (role === 'go' && d.kind === ivKind && isTime(app.ivTime)) time = app.ivTime;
     let parts = [];
     if (role === 'reg') parts = partsOf(d, p, mail);
-    else if (role === 'ticket' || role === 'intent') parts = [{key: role, name: role === 'ticket' ? PART_NAME.ticket : displayLabel(role, d, hasIv), date: d.date, time: '', mail: '', opt: false, rowId: d.id, kind: d.kind}];
+    // 印准考證、填遞補意願：一列一個勾；鐘點跟著這一列（市北 12/11 16:00 意願截止，16:00 過了才算逾期）
+    else if (role === 'ticket' || role === 'intent') parts = [{key: role, name: role === 'ticket' ? ticketName(rowLabel(d)) : displayLabel(role, d, hasIv), date: d.date, time, mail: '', opt: false, rowId: d.id, kind: d.kind}];
     for (const pt of parts) pt.done = !!done.get(pt.key);
     const label = role === 'reg' ? parts.map(x => x.name).join('・') : displayLabel(role, d, hasIv);
     const ev = {appId: app.id, rowId: d.id, rowIds: [d.id], kind: d.kind, role, type: TYPE_OF[role], date: d.date, time, from: isKey(d.from) ? d.from : '', fromTime: isTime(d.fromTime) ? d.fromTime : '', end: isKey(d.end) && d.end > d.date ? d.end : '',
@@ -250,10 +283,11 @@ function stageOf(app, evs, c) {
   const allGoPast = go.length > 0 && go.every(e => goPassed(e, c));
   if (app.ivSkip && (allGoPast || s === 'waiting')) return 'ended';
   if (s === 'waiting') return 'waiting';
+  // 有篩選的名單（不管回答了沒）：要回答「在名單上」才變待面試；沒回答、沒通過都不會因為准考證、時間表那一列就自己變。
   const screens = evs.some(e => e.role === 'stage1');
   if (allGoPast) return s === 'interview' || !screens ? 'waiting' : 'applied';
   if (s === 'interview') return 'interview';
-  // 不篩選的「名單」（面試順序、准考證）一到，已報名就等於待面試。
+  // 整個系組都沒有篩選：不篩選的「名單」（面試順序、准考證）一到，已報名就等於待面試。
   if (!screens && evs.some(e => e.scr === false && reached(e.date, e.time, c))) return 'interview';
   return 'applied';
 }
@@ -277,15 +311,17 @@ function gsatOf(season) {
   return list.find(e => e && isKey(e.date) && (e.key === 'gsatScore' || /學測成績/.test(e.label || ''))) || null;
 }
 function appCtx(app, program, c, opts = {}) {
-  const evs = eventsOf(app, program, opts);
+  const allEvs = eventsOf(app, program, {...opts, gone: true}), evs = allEvs.filter(e => !e.gone);
   const go = evs.filter(e => e.role === 'go');
-  return {app, p: program || null, evs, c, stage: stageOf(app, evs, c), goLast: go.length ? go.map(e => e.end || e.date).sort().pop() : '',
+  return {app, p: program || null, evs, allEvs, c, stage: stageOf(app, evs, c), goLast: go.length ? go.map(e => e.end || e.date).sort().pop() : '',
     mineConfirm: evs.some(e => e.role === 'confirm' && e.src === 'mine'), gsat: gsatOf(opts.season), seen: new Set(app.seen || [])};
 }
-const partPassed = (pt, c) => passed(pt.date, pt.time, c, !!pt.mail || !pt.time);
+// 有鐘點的部分到那個鐘點就過了（郵戳、寄達有鐘點的也是）；沒鐘點的到當天結束。
+const partPassed = (pt, c) => passed(pt.date, pt.time, c, !pt.time);
 const giveupFrom = (ev, gsat) => { const a = addDays(ev.date, -14); const b = gsat ? addDays(gsat.date, -7) : ''; return b > a ? b : a; };
 function relevantIn(x, ev) {
   const {app, c, stage} = x;
+  if (ev.gone) return false;
   switch (ev.role) {
     case 'reg': {
       const open = ev.parts.filter(pt => !pt.opt && !pt.done);
@@ -293,7 +329,8 @@ function relevantIn(x, ev) {
       if (stage === 'applied') return open.some(pt => !partPassed(pt, c));
       return false;
     }
-    case 'ticket': return (stage === 'applied' || stage === 'interview') && !ev.parts[0].done && (x.goLast ? x.goLast >= c.date : ev.date >= c.date);
+    // 印准考證：到最後一個面試／考試日都還要；不去面試就不用印
+    case 'ticket': return (stage === 'applied' || stage === 'interview') && !ev.parts[0].done && !app.ivSkip && (x.goLast ? x.goLast >= c.date : ev.date >= c.date);
     case 'go': return (stage === 'applied' || stage === 'interview') && !app.ivSkip && !goPassed(ev, c);
     case 'stage1': return stage === 'applied';
     case 'notice': return (stage === 'applied' || stage === 'interview') && ev.date >= c.date;
@@ -301,7 +338,8 @@ function relevantIn(x, ev) {
     case 'confirm': return stage === 'admitted' && (!x.mineConfirm || ev.src === 'mine');
     case 'giveup': return stage === 'held' && app.choice !== 'keep' && c.date >= giveupFrom(ev, x.gsat);
     case 'intent': return stage === 'waitlist' && !ev.parts[0].done;
-    case 'waitcheck': return stage === 'waitlist' && ev.date >= c.date && !x.seen.has(ev.rowId);
+    // 遞補公告：沒回答就留著（逾期，跟放榜一樣），遞補可能很晚才打來；下一次遞補公告到了就由那一列來問，不重複問。
+    case 'waitcheck': return stage === 'waitlist' && !x.seen.has(ev.rowId) && !x.evs.some(e => e.role === 'waitcheck' && e.date > ev.date && reached(e.date, e.time, c));
     default: return false;
   }
 }
@@ -317,7 +355,7 @@ const progIndex = programs => {
   const m = new Map((Array.isArray(programs) ? programs : programs.programs || []).map(p => [p.i, p]));
   return id => m.get(id) || null;
 };
-const firstReg = a => (a.dates || []).filter(d => d && d.kind === 'reg' && isKey(d.date)).map(d => d.date + ' ' + (d.time || '24:00')).sort()[0] || '9999';
+const firstReg = a => (Array.isArray(a.dates) ? a.dates : []).filter(d => d && d.kind === 'reg' && !d.gone && isKey(d.date)).map(d => d.date + ' ' + (d.time || '24:00')).sort()[0] || '9999';
 export function orderApps(apps, programs, now) {
   const c = clock(now), get = progIndex(programs);
   const sorted = [...apps].sort((x, y) => firstReg(x).localeCompare(firstReg(y)) || (x.createdAt || 0) - (y.createdAt || 0));
@@ -375,7 +413,8 @@ function partOwn(pt, rowTime, c) {
 }
 function buildRow(app, p, g, evs, x, opts, all) {
   const {c, stage} = x;
-  const e0 = evs[0], date = e0.date, short = n => shortSchool(n, opts.aliases);
+  const e0 = evs[0], short = a => appName(a, all.apps, opts.aliases);
+  let date = e0.date;
   let parts = [];
   if (g === 'reg' || g === 'ticket' || g === 'intent') {
     const byKey = new Map();
@@ -385,20 +424,38 @@ function buildRow(app, p, g, evs, x, opts, all) {
       if (!cur || (pt.key === 'docs' && pt.kind === 'upload') || (pt.key === 'pay' && pt.kind === 'pay') || (pt.key === 'letter' && pt.kind === 'letter')) byKey.set(pt.key, {...pt});
     }
     parts = [...byKey.values()].sort((a, b) => PART_ORDER[a.key] - PART_ORDER[b.key]);
-    if (stage === 'applied') parts = parts.filter(pt => pt.done || !partPassed(pt, c));
+    // 已報名：報名的部分只留還沒到期的（印准考證、意願不在這裡篩）
+    if (stage === 'applied' && g === 'reg') parts = parts.filter(pt => pt.done || !partPassed(pt, c));
   }
-  const timed = (parts.length ? parts.filter(pt => !pt.mail && pt.time && !pt.opt) : evs).map(e => e.time).filter(Boolean).sort();
-  const time = timed[0] || (parts.length ? parts.filter(pt => !pt.mail && pt.time).map(pt => pt.time).sort()[0] || '' : '');
-  for (const pt of parts) { pt.own = partOwn(pt, time, c); if (pt.mail === 'arrive') pt.sendBy = addDays(pt.date, -3); }
-  const mail = parts.length && !time ? (parts.find(pt => pt.mail && !pt.opt) || {}).mail || '' : (!parts.length ? e0.mail : '');
-  const from = evs.map(e => e.from ? e.from + ' ' + (e.fromTime || '') : '').filter(Boolean).sort()[0] || '';
-  const row = {key: `${app.id}|${date}|${g}`, appId: app.id, date, time, sortKey: '', type: TYPE_OF[g] || e0.type, role: g, kind: e0.kind,
+  // 印准考證：開放列印之後到考試那天都能印，是範圍型的「要做」：from = 開放列印，date = 最後一個面試／考試日（之前不算逾期）
+  let ticketFrom = null;
+  if (g === 'ticket' && x.goLast > date) {
+    ticketFrom = {date, time: e0.time};
+    date = x.goLast;
+    for (const pt of parts) { pt.date = date; pt.time = ''; }
+  }
+  // 這列的時間跟著還沒勾的部分走：已勾的部分不決定這列的時間（勾完繳費，市北就只剩「今天郵戳」）
+  const base = parts.some(pt => !pt.done && !pt.opt) ? parts.filter(pt => !pt.done) : parts;
+  let time = '', mail = '';
+  if (parts.length) {
+    time = base.filter(pt => !pt.mail && pt.time && !pt.opt).map(pt => pt.time).sort()[0] || base.filter(pt => !pt.mail && pt.time).map(pt => pt.time).sort()[0] || '';
+    // 只剩郵寄的部分：這列寫「今天郵戳」；郵戳有鐘點的（12:00 前郵戳）鐘點就是這列的時間
+    if (!time) { const mp = base.filter(pt => pt.mail && !pt.opt).sort((a, b) => (a.time || '99').localeCompare(b.time || '99'))[0]; if (mp) { mail = mp.mail; time = mp.time || ''; } }
+  } else {
+    time = ticketFrom ? '' : evs.map(e => e.time).filter(Boolean).sort()[0] || '';
+    mail = e0.mail;
+  }
+  // 列上已經寫了「今天郵戳」，那個部分就不再寫一次
+  const rowTT = timeText({date, time, mail}, c);
+  for (const pt of parts) { const own = partOwn(pt, time, c); pt.own = pt.mail && own === rowTT ? '' : own; if (pt.mail === 'arrive') pt.sendBy = addDays(pt.date, -3); }
+  const from = ticketFrom ? `${ticketFrom.date} ${ticketFrom.time || ''}` : evs.map(e => e.from ? e.from + ' ' + (e.fromTime || '') : '').filter(Boolean).sort()[0] || '';
+  const row = {key: `${app.id}|${e0.date}|${g}`, appId: app.id, date, time, sortKey: '', type: TYPE_OF[g] || e0.type, role: g, kind: e0.kind,
     label: g === 'reg' ? parts.map(pt => pt.name).join('・') : [...new Set(evs.map(e => e.label))].join('・'),
     parts, rowIds: evs.map(e => e.rowId), from: from.slice(0, 10), fromTime: from.slice(11), mail, actions: [], overdue: false,
     note: [...new Set(evs.map(e => e.note).filter(Boolean))].join('；'), edited: evs.some(e => e.edited), upd: evs.map(e => e.upd).find(Boolean) || ''};
   const A = row.actions, ask = (id, label, kind = 'quiet', more = {}) => A.push({id, label, kind, ...more});
   const link = (label, which) => { const href = linkFor(app, p, opts, which); if (href) A.push({id: 'link', label, kind: 'link', href}); };
-  const deadlinePassed = passed(date, time, c, !time || !!mail);
+  const deadlinePassed = passed(date, time, c, !time);
   // 寄達為憑：右欄提醒「最晚 3 天前寄出」
   if (mail === 'arrive') row.sendBy = addDays(date, -3);
   switch (g) {
@@ -411,12 +468,17 @@ function buildRow(app, p, g, evs, x, opts, all) {
       if (row.overdue) { row.question = 'registered'; ask('registered', '有報名', 'primary'); ask('notRegistered', '沒報'); }
       break;
     }
-    case 'ticket': row.overdue = date < c.date; link('報名系統', 'apply'); break;
+    case 'ticket': row.overdue = date < c.date; link('報名系統', 'apply'); break; // date 已經是考試那天（見上面 ticketFrom）
     case 'intent': row.overdue = deadlinePassed; link('招生網', 'adm'); break;
     case 'go': {
       const cl = all.clashes.get(date);
       if (cl && cl.includes(app.id)) row.clash = cl.filter(id => id !== app.id);
-      if (stage === 'applied' && x.evs.some(e => e.role === 'stage1')) row.tentative = true;
+      // 還要等名單（篩選）才確定的面試／考試：畫淡一點，右欄寫為什麼（「11/07 名單公布後才確定」）
+      if (stage === 'applied' && x.evs.some(e => e.role === 'stage1')) {
+        row.tentative = true;
+        const s1 = x.evs.filter(e => e.role === 'stage1' && e.date <= date).pop();
+        if (s1) row.context = `${md(s1.date)} 名單公布後才確定`;
+      }
       ask('skipInterview', '不去');
       break;
     }
@@ -439,6 +501,7 @@ function buildRow(app, p, g, evs, x, opts, all) {
       break;
     }
     case 'waitcheck': {
+      row.overdue = date < c.date;
       link('公告', 'notice');
       if (reached(date, time, c)) {
         row.question = 'promoted';
@@ -456,7 +519,7 @@ function buildRow(app, p, g, evs, x, opts, all) {
       if (how) row.note = [row.note, how].filter(Boolean).join('；');
       const held = all.held && all.held.id !== app.id ? all.held : null;
       if (held) {
-        const A2 = short(held.school), B = short(app.school);
+        const A2 = short(held), B = short(app);
         row.label = `要換到 ${B}，要先辦 ${A2} 的放棄`;
         row.question = 'swap';
         ask('swap', `換到 ${B}`, 'primary', {...dis, ask: {type: 'confirm', text: `${A2} 的放棄已經辦好了嗎？`, ok: '辦好了'}, also: [{appId: held.id, id: 'gaveUp'}]});
@@ -470,7 +533,7 @@ function buildRow(app, p, g, evs, x, opts, all) {
     }
     case 'giveup': {
       row.overdue = deadlinePassed;
-      row.label = `決定：留在 ${short(app.school)}，或放棄（改走申請入學）`;
+      row.label = `決定：留在 ${short(app)}，或放棄（改走申請入學）`;
       row.question = 'giveup';
       const how = howOf(p, 'giveup');
       if (how) row.note = [row.note, how].filter(Boolean).join('；');
@@ -489,7 +552,7 @@ export function agenda(apps, programs, now, opts = {}) {
   const ctxs = new Map(apps.map(a => [a.id, appCtx(a, get(a.programId), c, opts)]));
   const live = a => ['prep', 'applied', 'interview'].includes(ctxs.get(a.id).stage) && !a.ivSkip;
   const goDays = a => ctxs.get(a.id).evs.filter(e => e.role === 'go' && e.date >= c.date).map(e => e.date);
-  const all = {held: apps.find(isHeld) || null, clashes: clashes(apps, get, c, opts),
+  const all = {apps, held: apps.find(isHeld) || null, clashes: clashes(apps, get, c, opts),
     pending: id => apps.filter(a => a.id !== id && ['applied', 'interview', 'waiting'].includes(ctxs.get(a.id).stage)).length,
     // 報名列的右欄：這間的面試和哪些學校同一天（準備中的也算，只是事實）
     sameDay: id => { const me = apps.find(a => a.id === id); if (!live(me)) return []; return [...new Set(goDays(me))].map(date => ({date, with: apps.filter(a => a.id !== id && live(a) && goDays(a).includes(date)).map(a => a.id)})).filter(x => x.with.length); }};
@@ -537,12 +600,23 @@ export function timeline(app, program, now, opts = {}) {
   const ms = new Set(['reg', 'stage1', 'notice', 'ticket', 'go', 'release', 'confirm']);
   if (x.stage === 'held' || app.giveupDone) ms.add('giveup');
   if (x.stage === 'waitlist') { ms.add('intent'); ms.add('waitcheck'); }
-  const rows = x.evs.map(e => {
-    const past = passed(e.date, e.time, c, !e.time || !!e.mail || e.role === 'go');
+  // 簡章已刪除的列（gone）不是里程碑：只在「全部 N 個日期」裡
+  // done：這一列已經處理完（必繳的部分都勾了、准考證印了、意願填了、名單／放榜回答了、報到辦了、不去面試）。
+  // 和過去的一樣算「後面」，不會是下一個；和接下來、下一步看到的一致。
+  const st = app.status;
+  const doneOf = e => e.parts.length ? e.parts.every(pt => pt.done || pt.opt)
+    : e.role === 'go' ? !!app.ivSkip
+    : e.role === 'stage1' ? !['prep', 'applied', 'skipped'].includes(st)
+    : e.role === 'release' ? ['admitted', 'waitlist', 'rejected'].includes(st)
+    : e.role === 'confirm' ? !!app.confirmDone
+    : e.role === 'giveup' ? !!app.giveupDone || app.choice === 'keep'
+    : false;
+  const rows = x.allEvs.map(e => {
+    const past = passed(e.date, e.time, c, !e.time || e.role === 'go');
     const cl = clash.find(k => k.rowId === e.rowId);
-    return {...e, milestone: ms.has(e.role), past, clash: cl ? cl.with : undefined};
+    return {...e, milestone: ms.has(e.role) && !e.gone, past, done: doneOf(e), clash: cl ? cl.with : undefined};
   });
-  const next = rows.find(r => r.milestone && !r.past);
+  const next = rows.find(r => r.milestone && !r.past && !r.done);
   if (next) next.next = true;
   return rows;
 }
@@ -568,6 +642,13 @@ export function recordFields(app, program, now) {
   out.push({key: 'notes', label: '筆記', value: userNotes(app)});
   return out;
 }
+
+// ＋新增日期只填名稱：從名稱猜種類，面試、放榜、報到才會上接下來和行事曆。順序有關係（「面試名單公布」是名單，「已報到生放棄」是放棄，
+// 「寄發成績單（非放榜）」是成績單）。列印、下載（准考證、審核通知）是 other，roleOf 再看列名當成印准考證。
+const KIND_GUESS = [['giveup', /放棄/], ['wait', /遞補|備取/], ['score', /非放榜|成績單|成績查詢|查詢成績/], ['stage1', /(一階|第一階段|初審|初試).*(放榜|結果|通過)/],
+  ['release', /放榜|錄取/], ['open', /報名開始|開始報名|開放報名/], ['review', /複查/], ['stage1', /名單|公告|公[布佈]/], ['confirm', /報到/], ['other', /列印|下載/],
+  ['interview', /面試|面談|口試|甄試|二階/], ['exam', /筆試|考試|上機|實作|測驗|術科/], ['pay', /繳費/], ['letter', /推薦/], ['upload', /上傳|繳件|郵寄|寄件|寄送|寄繳|繳交|備審/], ['reg', /報名/]];
+export const guessKind = label => (KIND_GUESS.find(([, re]) => re.test(String(label || ''))) || ['other'])[0];
 
 /* ---------- 新增學校 ---------- */
 const defaultUid = () => (globalThis.crypto && globalThis.crypto.randomUUID) ? globalThis.crypto.randomUUID() : 'a' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
@@ -603,6 +684,14 @@ function requiredKeys(app, program) {
   for (const e of eventsOf(app, program)) if (e.role === 'reg') for (const pt of e.parts) if (!pt.opt) keys.add(pt.key);
   return keys;
 }
+// 有報名：只勾已經過了的部分；還沒到期的留著，已報名時照樣出現（§3.4 政大 繳件 17:00、高師大 上傳 11/10）。沒給 now 就全勾。
+function registeredKeys(app, program, now) {
+  const keys = requiredKeys(app, program);
+  if (!now) return keys;
+  const c = clock(now);
+  for (const e of eventsOf(app, program)) if (e.role === 'reg') for (const pt of e.parts) if (!pt.opt && !partPassed(pt, c)) keys.delete(pt.key);
+  return keys;
+}
 function partName(app, program, key) {
   for (const e of eventsOf(app, program)) for (const pt of e.parts) if (pt.key === key) return pt.name;
   return PART_NAME[key] || key;
@@ -618,7 +707,7 @@ export const ACTIONS = ['tick', 'registered', 'notRegistered', 'passed', 'notPas
 export function applyAction(app, actionId, payload = {}, ctx = {}) {
   const a = clone(app), p = ctx.program || null, uid = ctx.uid || defaultUid;
   payload = payload || {};
-  const row = id => (a.dates || []).find(d => d.id === id);
+  const row = id => id ? (a.dates || []).find(d => d.id === id) : undefined;
   const hide = ref => { if (ref) { a.hidden = Array.isArray(a.hidden) ? a.hidden : []; if (!a.hidden.includes(ref)) a.hidden.push(ref); } };
   switch (actionId) {
     case 'tick': {
@@ -629,7 +718,7 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
       if (done && a.status === 'prep') { const req = requiredKeys(a, p); if (req.size && [...req].every(k => a.regSteps.some(s => s.key === k && s.done))) a.status = 'applied'; }
       break;
     }
-    case 'registered': for (const k of requiredKeys(a, p)) setStep(a, k, true, partName(a, p, k), uid); a.status = 'applied'; break;
+    case 'registered': for (const k of registeredKeys(a, p, ctx.now)) setStep(a, k, true, partName(a, p, k), uid); a.status = 'applied'; break;
     case 'notRegistered': a.status = 'skipped'; break;
     case 'passed': a.status = 'interview'; break;
     case 'notPassed': a.status = 'out'; break;
@@ -642,7 +731,8 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
     case 'gaveUp': a.giveupDone = true; break;
     case 'promoted': {
       a.status = 'admitted';
-      if (isKey(payload.date)) a.dates.push({id: uid(), kind: 'confirm', date: payload.date, time: isTime(payload.time) ? payload.time : '', end: '', from: '', fromTime: '', note: '報到', src: 'mine', ref: ''});
+      // payload.id：網頁先給好 id，409 重做時已經有這一列就不再加（不會重複）
+      if (isKey(payload.date) && !row(payload.id)) a.dates.push({id: payload.id || uid(), kind: 'confirm', date: payload.date, time: isTime(payload.time) ? payload.time : '', end: '', from: '', fromTime: '', note: '報到', src: 'mine', ref: ''});
       break;
     }
     case 'notYet': a.seen = [...new Set([...(a.seen || []), ...(payload.rowIds || [payload.rowId]).filter(Boolean)])]; break;
@@ -654,7 +744,8 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
       if (s === 'held') Object.assign(a, {status: 'admitted', confirmDone: true, giveupDone: false, choice: ''});
       else if (s === 'gaveup') Object.assign(a, {status: 'admitted', confirmDone: true, giveupDone: true});
       else if (s === 'declined') Object.assign(a, {choice: 'decline'});
-      else if (STATUS_LABEL[s]) Object.assign(a, {status: s, confirmDone: false, giveupDone: false, choice: ''});
+      // 一般狀態也清掉「不去面試」：按錯的不去，復原提示不見之後還改得回來
+      else if (STATUS_LABEL[s]) Object.assign(a, {status: s, confirmDone: false, giveupDone: false, choice: '', ivSkip: false});
       else throw new Error(`logic: unknown status ${s}`);
       break;
     }
@@ -666,10 +757,11 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
       if (typeof payload.label === 'string' && payload.label.trim()) d.note = withLabel(d, payload.label.trim());
       break;
     }
-    case 'restoreDate': { const d = row(payload.rowId); if (d && d.bro) { Object.assign(d, VAL(d.bro)); delete d.brochureNow; } break; }
+    // 還原：拿回 bro（衝突時 bro 已經是簡章現在的值）。brochureNow 設 null 不是刪掉：伺服器的 carryOver 才不會把舊的補回來
+    case 'restoreDate': { const d = row(payload.rowId); if (d && d.bro) { Object.assign(d, VAL(d.bro)); d.brochureNow = null; } break; }
     case 'addDate': {
-      if (!isKey(payload.date)) break;
-      a.dates.push({id: uid(), kind: KIND_LABEL[payload.kind] ? payload.kind : 'other', date: payload.date, time: isTime(payload.time) ? payload.time : '', end: '', from: '', fromTime: '', note: String(payload.label || '').trim() || KIND_LABEL[payload.kind] || '其他', src: 'mine', ref: ''});
+      if (!isKey(payload.date) || row(payload.id)) break;
+      a.dates.push({id: payload.id || uid(), kind: KIND_LABEL[payload.kind] ? payload.kind : guessKind(payload.label), date: payload.date, time: isTime(payload.time) ? payload.time : '', end: '', from: '', fromTime: '', note: String(payload.label || '').trim() || KIND_LABEL[payload.kind] || '其他', src: 'mine', ref: ''});
       break;
     }
     case 'removeDate': { const d = row(payload.rowId); if (!d) break; if (d.src === 'brochure') hide(d.ref); a.dates = a.dates.filter(x => x !== d); break; }
@@ -680,7 +772,7 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
       break;
     }
     case 'tickDoc': { const d = (a.docs || []).find(x => x.id === payload.docId); if (d) d.done = payload.done ?? !d.done; break; }
-    case 'addDoc': { const n = String(payload.name || '').trim(); if (n) (a.docs = a.docs || []).push({id: uid(), name: n, done: false, src: 'mine'}); break; }
+    case 'addDoc': { const n = String(payload.name || '').trim(); if (n && !(payload.id && (a.docs || []).some(d => d.id === payload.id))) (a.docs = a.docs || []).push({id: payload.id || uid(), name: n, done: false, src: 'mine'}); break; }
     case 'hideDoc': { const d = (a.docs || []).find(x => x.id === payload.docId); if (!d) break; if (d.src === 'brochure') hide(d.ref); a.docs = a.docs.filter(x => x !== d); break; }
     case 'unhideDoc': {
       a.hidden = (a.hidden || []).filter(r => r !== payload.ref);
@@ -724,6 +816,16 @@ export function brochureRows(p) {
       : {kind, ref, date: sd, time: st || '', from: '', fromTime: '', end: ed || '', note: note2};
   }).filter(r => isKey(r.date));
 }
+// 日期列的 note = 標籤｜簡章附註：標籤和 ref 的列名一樣（沒自己改名）就整個跟簡章；改過名就留自己的標籤，附註還是跟簡章
+const noteFrom = (d, ref, r) => nz(rowLabel(d)) === ref.slice(ref.indexOf('|') + 1).replace(/#\d+$/, '') ? r.note : withLabel(r, String(d.note || '').split(SEP)[0]);
+// v2 從簡章帶進來的列名（特殊選才網的固定說法）。自己加的列（「面試」「作品集面談」、空白）不會剛好是這些。
+const V2_BROCHURE_NAME = /^(網路報名.*|繳費.*|繳件.*|.*(上傳|郵寄|寄繳|寄件|親送|繳交).*(資料|時間|截止|期限).*|推薦函.*|.*名單公[布佈]|(面試|筆試|術科|二階)(時間|日期)|.*複查.*|.*成績.*(公告|公布|查詢|寄發).*|錄取放榜|放榜時間|正取生.*|備取生.*|開始遞補.*|已報到生.*|准考證.*|.*（非放榜）)$/;
+// v2 把意願、登記這類範圍存成 date=開始、end=結束：轉成 v3（date/time=截止、from/fromTime=開始；v2 沒存截止的鐘點，有簡章列就用簡章的）
+function v2Range(d, r) {
+  const range = !DEADLINE_KINDS.has(d.kind) && DO_RANGE(d.kind, rowLabel(d)) && isKey(d.end) && d.end > d.date;
+  if (range) Object.assign(d, {from: d.date, fromTime: d.time || '', date: d.end, time: r && r.from ? r.time : '', end: ''});
+  else Object.assign(d, {from: d.from || '', fromTime: d.fromTime || ''});
+}
 const PLACEHOLDER = n => DEFAULT_DOCS.includes(n) || /^推薦信（.*）$/.test(n) || /^作品集(（.*）)?$/.test(n);
 const mkDoc = (full, uid) => ({id: uid(), name: shortDoc(full), full, done: false, src: 'brochure', ref: docRef(full), ...(OPT_RE.test(full) ? {opt: true} : {})});
 const docMatches = (name, full) => { const n = nz(name), f = nz(full); return n === nz(shortDocV2(full)) || n === nz(shortDoc(full)) || (n.length >= 4 && f.startsWith(n)); };
@@ -739,34 +841,47 @@ export function migrateApp(app, program, idx = 0, opts = {}) {
   if (app.v === 3) return app;
   const a = clone(app), p = program || null, uid = opts.uid || defaultUid;
   if (!Number.isInteger(a.color)) a.color = ((idx % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
-  a.dates = Array.isArray(a.dates) ? a.dates : [];
+  a.dates = Array.isArray(a.dates) ? a.dates.filter(d => d && typeof d === 'object') : [];
   const rows = p ? brochureRows(p) : [];
   const taken = new Set(a.dates.filter(d => d.src && d.ref).map(d => d.ref));
-  const free = d => rows.filter(r => !taken.has(r.ref) && r.kind === d.kind);
-  const pairs = [], left = [];
-  for (const d of a.dates) {
-    if (d.src) continue;
-    const label = rowLabel(d).replace(/・.*$/, '');
-    const r = free(d).find(r => r.ref.replace(/#\d+$/, '') === `${d.kind}|${nz(label)}`)
-      || free(d).find(r => r.ref.startsWith(`${d.kind}|${nz(label)}`))
-      || free(d).find(r => r.date === (DO_RANGE(d.kind, label) && d.end ? d.end : d.date) && r.time === (d.time || ''));
-    if (r) { taken.add(r.ref); pairs.push([d, r]); } else left.push(d);
-  }
-  // 標籤和日期都被新簡章改了（逢甲一階改名又改日）：同一種只剩一列對一列，就當成同一列（之後同步會更新它），不要變成兩列
-  const nLeft = {};
-  for (const d of left) nLeft[d.kind] = (nLeft[d.kind] || 0) + 1;
+  const labelOf = d => rowLabel(d).replace(/・.*$/, '');
+  // v2 的截止類存截止日；意願、登記這類範圍存 date=開始、end=結束
+  const dueOf = d => DO_RANGE(d.kind, labelOf(d)) && d.end ? d.end : d.date;
+  // 同一種、而且一樣是篩選／不是篩選的列才配（逢甲舊的「面試名單公布 12/01 14:00」不能配到同時間的「公告面試時間表」）
+  const free = d => rows.filter(r => !taken.has(r.ref) && r.kind === d.kind && matchClass(r.kind, rowLabel(r), p) === matchClass(d.kind, labelOf(d), p));
+  const old = a.dates.filter(d => !d.src), pairs = [];
+  const pair = (d, r) => { taken.add(r.ref); pairs.push([d, r]); };
+  const open = () => old.filter(d => !pairs.some(([x]) => x === d));
+  // 一輪一種比法，全部的列比完才換下一種，前面比較寬的比法才不會搶走後面列名完全一樣的
+  const MATCHERS = [
+    (d, c) => c.find(r => r.ref.replace(/#\d+$/, '') === `${d.kind}|${nz(labelOf(d))}`),
+    (d, c) => c.find(r => r.ref.startsWith(`${d.kind}|${nz(labelOf(d))}`)),
+    (d, c) => c.find(r => r.date === dueOf(d) && r.time === (d.time || '')),
+    // 同一天只有一列同種的：列名、鐘點都不看（成大舊的「筆試時間 11/14」就是現在的「上機考試 11/14 09:00」）
+    (d, c) => { const s = c.filter(r => r.date === dueOf(d)); return s.length === 1 ? s[0] : null; },
+  ];
+  for (const m of MATCHERS) for (const d of open()) { const r = m(d, free(d)); if (r) pair(d, r); }
+  // 標籤和日期都被新簡章改了（逢甲一階改名又改日）：同一類只剩一列對一列，就當成同一列（之後同步會更新它），不要變成兩列
+  const nLeft = {}, cls = d => matchClass(d.kind, labelOf(d), p);
+  for (const d of open()) nLeft[cls(d)] = (nLeft[cls(d)] || 0) + 1;
+  for (const d of open()) { const cand = free(d); if (cand.length === 1 && nLeft[cls(d)] === 1) pair(d, cand[0]); }
+  const left = open();
+  // 配不到的：看起來是從簡章帶進來的（特殊選才網的固定列名），就是新簡章刪掉的列（成大 推薦函截止、市北 初試成績複查），
+  // 原樣留著標 gone（只在學校頁「全部日期」）；其他的是自己加的列。簡章怪怪的（配不到四成以上）就都當成自己的，不藏。
+  const trust = rows.length > 0 && left.length <= old.length * 0.4;
   for (const d of left) {
-    const cand = free(d);
-    if (cand.length === 1 && nLeft[d.kind] === 1) { taken.add(cand[0].ref); pairs.push([d, cand[0]]); }
-    else Object.assign(d, {src: 'mine', from: d.from || '', fromTime: d.fromTime || '', ref: d.ref || ''});
+    v2Range(d);
+    const ref = `${d.kind}|${nz(labelOf(d))}`;
+    if (trust && V2_BROCHURE_NAME.test(labelOf(d))) Object.assign(d, {src: 'brochure', ref: taken.has(ref) ? '' : ref, gone: true, bro: VAL(d)});
+    else Object.assign(d, {src: 'mine', ref: d.ref || ''});
   }
   for (const [d, r] of pairs) {
-    // v2 的 programDates() 會怎麼存這一列（只有截止類把範圍收成截止日）
-    const e = p.ev.find(e => `${e[0]}|${nz(e[5])}` === r.ref.replace(/#\d+$/, '')) || [r.kind, r.from || r.date, r.from ? r.date : r.end, r.fromTime || r.time, r.from ? r.time : '', ''];
-    const v2 = DEADLINE_KINDS.has(e[0]) && e[2] ? {date: e[2], time: e[4] || '', end: ''} : {date: e[1], time: e[3] || '', end: e[2] || ''};
+    // v2 的 programDates() 會怎麼存這一列（截止類把範圍收成截止日；意願這類範圍存 date=開始、end=結束）
+    const v2 = DEADLINE_KINDS.has(r.kind) ? {date: r.date, time: r.time, end: r.from ? '' : r.end} : r.from ? {date: r.from, time: r.fromTime, end: r.date} : {date: r.date, time: r.time, end: r.end};
     if (v2.date === d.date && v2.time === (d.time || '') && v2.end === (d.end || '')) Object.assign(d, VAL(r), {note: r.note, src: 'brochure', ref: r.ref, bro: VAL(r)});
-    // 舊資料和簡章不同（舊的簡章或自己改過）：base 用它現在的值，同步時簡章有變就更新並記在 syncLog
-    else Object.assign(d, {from: d.from || '', fromTime: d.fromTime || '', src: 'brochure', ref: r.ref, bro: VAL(d)});
+    // 舊資料和簡章不同（舊的簡章或自己改過）：base 用它現在的值，同步時簡章有變就更新並記在 syncLog。
+    // 列名、附註跟現在的簡章（v2 的附註是舊版自動寫的；之前第一次同步也會蓋掉）
+    else { v2Range(d, r); Object.assign(d, {note: r.note, src: 'brochure', ref: r.ref}); d.bro = VAL(d); }
   }
   const docs = Array.isArray(a.docs) ? a.docs : [];
   const want = (p && p.docs) || [];
@@ -792,31 +907,88 @@ export function migrateApp(app, program, idx = 0, opts = {}) {
   a.v = 3;
   return a;
 }
-const changeText = d => d.date ? md(d.date) + (d.time ? ' ' + d.time : '') : '';
-const whatOf = r => ['reg', 'pay', 'upload', 'letter', 'stage1', 'release', 'confirm', 'giveup', 'interview'].includes(r.kind) ? KIND_LABEL[r.kind] : (rowLabel(r) || KIND_LABEL[r.kind] || '日期');
+const changeText = d => d.date ? md(d.date) + (d.end ? '–' + md(d.end) : '') + (d.time ? ' ' + d.time : '') : '';
+// 只有開始時間變了（截止一樣）：兩邊都寫「起」，才看得出改了什麼
+const fullText = d => (d.from ? `${md(d.from)}${d.fromTime ? ' ' + d.fromTime : ''} 起，` : '') + changeText(d);
+const changePair = (d, r) => changeText(d) === changeText(r) ? [fullText(d), fullText(r)] : [changeText(d), changeText(r)];
+// syncLog 的「什麼」：報名截止、一階名單…；不是篩選的名單（面試時間表、准考證列印）寫它自己的列名
+const whatOf = (r, p) => r.kind === 'stage1' && !scrOf(r, p) ? (rowLabel(r) || '名單') : ['reg', 'pay', 'upload', 'letter', 'stage1', 'release', 'confirm', 'giveup', 'interview'].includes(r.kind) ? KIND_LABEL[r.kind] : (rowLabel(r) || KIND_LABEL[r.kind] || '日期');
+// 簡章更新的提示（一則）只寫最要緊的那一項：報名、繳費、繳件、推薦函的期限提早了（提早最多的）→ 報到、放棄的期限提早了
+// → 其他要做的事 → 面試、名單、放榜 → 簡章刪掉的列 → 其他（複查、成績…）→ 備審；同一級的取 syncLog 裡的第一項。
+// 其他的改動在學校頁那幾列寫「簡章更新」。舊的 syncLog 沒有 kind：從「報名截止」這類名稱反查。
+const SYNC_DO = new Set(['reg', 'pay', 'upload', 'letter', 'confirm', 'giveup']), SYNC_KEY = new Set(['interview', 'exam', 'window', 'stage1', 'release']);
+// 「11/18 23:59」「2026-11-18T23:59」→ 可以比大小的分鐘數；沒有鐘點算到當天結束；1–7 月是隔年。「11/10 09:00 起，11/18」看截止那一段。
+function changeMinutes(v) {
+  const t = String(v ?? '').replace(/\d{4}-(\d\d)-(\d\d)(?:T(\d\d:\d\d))?/g, (_, m, d, h) => `${m}/${d}${h ? ' ' + h : ''}`).replace(/^.*起，/, '');
+  const m = /^(\d\d)\/(\d\d)(?:–\d\d\/\d\d)?(?: (\d\d):(\d\d))?/.exec(t);
+  if (!m) return null;
+  const mo = +m[1] < 8 ? +m[1] + 12 : +m[1];
+  return (mo * 31 + +m[2]) * 1440 + (m[3] ? +m[3] * 60 + +m[4] : 1440);
+}
+export function syncHeadline(changes) {
+  const rank = c => {
+    const k = c.kind || Object.keys(KIND_LABEL).find(x => KIND_LABEL[x] === c.what) || '';
+    if (c.doc) return [6, 0];
+    if (SYNC_DO.has(k)) { const a = changeMinutes(c.from), b = changeMinutes(c.to); return a != null && b != null && b < a ? [REG_KINDS.has(k) ? 0 : 1, b - a] : [2, 0]; }
+    if (SYNC_KEY.has(k)) return [3, 0];
+    return c.removed || c.gone ? [4, 0] : [5, 0];
+  };
+  let best = null, br = null;
+  for (const c of changes || []) { const r = rank(c); if (!best || r[0] < br[0] || (r[0] === br[0] && r[1] < br[1])) { best = c; br = r; } }
+  return best;
+}
 // 簡章同步：每一列和它上次同步的簡章值（bro）三方比較。回傳 {app, changes, skipped}。
 export function syncApp(app, program, now, opts = {}) {
   const p = program || null, uid = opts.uid || defaultUid, tag = opts.syncId || '';
   if (!p || app.v !== 3) return {app, changes: [], skipped: p ? 'not migrated' : 'no program'};
   const rows = brochureRows(p);
-  const mineCount = (app.dates || []).filter(d => d.src === 'brochure').length;
+  const mineCount = (app.dates || []).filter(d => d && d.src === 'brochure' && !d.gone).length;
   if (rows.length === 0 || rows.length < mineCount * 0.6) return {app, changes: [], skipped: `brochure has ${rows.length} rows, app has ${mineCount}`};
   const a = clone(app), ch = [], hidden = new Set(a.hidden || []);
-  let quiet = false; // 只有備審短名稱之類的變動：要寫回，但不必通知
+  a.dates = (Array.isArray(a.dates) ? a.dates : []).filter(d => d && typeof d === 'object');
+  let quiet = false; // 只有備審短名稱、附註、列名之類的變動：要寫回，但不必通知
   const log = (what, from, to, more = {}) => ch.push({appId: a.id, school: a.school, what, from, to, ...more});
+  const refs = new Set(rows.map(r => r.ref));
+  // 列名改了（overrides 改標籤）ref 就跟著變：同一類的「消失的舊列／刪掉的 tombstone」和「新出現的列」一對一配起來
+  // （先配值沒變的，再配同一類只剩一對一的，同 migrateApp），當成同一列改名；不然改過的列會多一列、刪掉的會回來。
+  const labelOfRef = ref => ref.slice(ref.indexOf('|') + 1).replace(/#\d+$/, '');
+  const kindOf = ref => ref.slice(0, ref.indexOf('|'));
+  const clsOf = (kind, label) => matchClass(kind, label, p);
+  const fresh = rows.filter(r => !hidden.has(r.ref) && !a.dates.some(d => d.ref === r.ref));
+  const lost = () => a.dates.filter(d => d.src === 'brochure' && !d.gone && d.ref && !refs.has(d.ref));
+  const take = r => { fresh.splice(fresh.indexOf(r), 1); quiet = true; return r.ref; };
+  const fits = (r, kind, label) => r.kind === kind && clsOf(r.kind, rowLabel(r)) === clsOf(kind, label);
+  for (const d of lost()) { const c = fresh.filter(r => fits(r, d.kind, labelOfRef(d.ref)) && sameVal(r, d.bro)); if (c.length === 1) { d.note = noteFrom(d, d.ref, c[0]); d.ref = take(c[0]); } }
+  const dead = [...hidden].filter(h => !h.startsWith('doc|') && h.includes('|') && !refs.has(h));
+  const clsOfRef = ref => clsOf(kindOf(ref), labelOfRef(ref));
+  for (const k of new Set([...lost().map(d => clsOfRef(d.ref)), ...dead.map(clsOfRef)])) {
+    const ld = lost().filter(d => clsOfRef(d.ref) === k), lh = dead.filter(h => clsOfRef(h) === k);
+    const c = fresh.filter(r => clsOf(r.kind, rowLabel(r)) === k);
+    if (ld.length + lh.length !== 1 || c.length !== 1) continue;
+    if (ld.length) { ld[0].note = noteFrom(ld[0], ld[0].ref, c[0]); ld[0].ref = take(c[0]); } else hidden.add(take(c[0]));
+  }
+  // 簡章已經沒有的列的 tombstone 不留（配到的已換成新 ref），免得之後新加的同種列被它吃掉
+  if (dead.length) { a.hidden = [...hidden].filter(h => h.startsWith('doc|') || refs.has(h)); quiet = true; }
   for (const r of rows) {
     if (hidden.has(r.ref)) continue;
     const d = a.dates.find(x => x.ref === r.ref);
-    if (!d) { a.dates.push({id: uid(), kind: r.kind, ...VAL(r), note: r.note, src: 'brochure', ref: r.ref, bro: VAL(r), ...(tag ? {upd: tag} : {})}); log(whatOf(r), '', changeText(r), {added: true}); continue; }
+    if (!d) { a.dates.push({id: uid(), kind: r.kind, ...VAL(r), note: r.note, src: 'brochure', ref: r.ref, bro: VAL(r), ...(tag ? {upd: tag} : {})}); log(whatOf(r, p), '', changeText(r), {added: true, kind: r.kind}); continue; }
+    if (d.gone) { delete d.gone; quiet = true; } // 簡章又有這一列了
+    // 只改附註（市北「限時掛號，郵戳為憑」）或列名：寫回，不通知；自己改過名的留自己的列名
+    const note = noteFrom(d, d.ref, r);
+    if (nz(note) !== nz(d.note)) { d.note = note; quiet = true; }
     if (sameVal(d.bro, r)) continue;
-    if (sameVal(d, d.bro)) { log(whatOf(r), changeText(d), changeText(r)); Object.assign(d, VAL(r), {note: r.note, bro: VAL(r)}); delete d.brochureNow; if (tag) d.upd = tag; }
-    else if (!d.brochureNow || !sameVal(d.brochureNow, r)) { d.brochureNow = VAL(r); log(whatOf(r), changeText(d), changeText(r), {conflict: true}); }
+    // 自己改的剛好就是簡章的新值：直接當成同步了，不算衝突
+    if (sameVal(d, r)) { d.bro = VAL(r); delete d.brochureNow; quiet = true; continue; }
+    if (sameVal(d, d.bro)) { log(whatOf(r, p), ...changePair(d, r), {kind: r.kind}); Object.assign(d, VAL(r), {bro: VAL(r)}); delete d.brochureNow; if (tag) d.upd = tag; }
+    // 衝突：留自己的值；基準換成簡章的新值，所以「還原」回到簡章現在的值，同一份簡章再同步也不會再報一次
+    else { d.brochureNow = VAL(r); d.bro = VAL(r); log(whatOf(r, p), ...changePair(d, r), {conflict: true, kind: r.kind}); }
   }
-  const refs = new Set(rows.map(r => r.ref));
   a.dates = a.dates.filter(d => {
-    if (d.src !== 'brochure' || refs.has(d.ref)) return true;
-    if (sameVal(d, d.bro)) { log(whatOf(d), changeText(d), '', {removed: true}); return false; }
-    if (!d.gone) { d.gone = true; log(whatOf(d), changeText(d), '', {gone: true}); }
+    // 已經標 gone 的（自己改過、或遷移時新簡章就沒有的）原樣留著
+    if (d.src !== 'brochure' || refs.has(d.ref) || d.gone) return true;
+    if (sameVal(d, d.bro)) { log(whatOf(d, p), changeText(d), '', {removed: true, kind: d.kind}); return false; }
+    d.gone = true; log(whatOf(d, p), changeText(d), '', {gone: true, kind: d.kind});
     return true;
   });
   // 備審：照簡章順序重建；勾過的依 ref → 短名稱 → 前綴帶過去；沒勾、沒改的舊項目拿掉；勾過但簡章沒了的留著標 gone

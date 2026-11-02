@@ -1,7 +1,7 @@
 // 接下來（#next）：所有現在要處理的事，照日期、時間排成一列（logic.agenda）；第一件今天以後的事放大。
 // 右邊是選到那一列的細節（預設是放大的那一列）：報名列看備審和簡章重點，面試列看准考證・時間地點，名單／放榜列看公告在哪、之後會怎樣。
 // 畫面上能直接按的只有：報名部分和備審的勾、結果按鈕、不去、連結；其他都在右欄的「改」。
-import {$, $$, S, esc, now, today, appById, programOf, shortName, agendaNow, act, actx, mutate, mutateMany, statusOf, eventsFor, namesOf, actionToast, tickToast} from './core.js';
+import {$, $$, S, esc, now, today, uid, appById, programOf, shortName, schoolName, agendaNow, act, actx, mutate, mutateMany, statusOf, eventsFor, namesOf, actionToast, tickToast} from './core.js';
 import * as L from './logic.js';
 import {hue, ext, pg, isEditing, editKey, closeEdit, editForm, onEditSave, timeInput, normTime, fromAhead, fromText, methodText, feeText} from './ui.js';
 
@@ -46,7 +46,7 @@ function actsHtml(r, big) {
   r.actions.forEach((a, i) => {
     if (a.kind === 'link') return;
     if (asking) return;
-    out.push(`<button type="button" class="btn sm${q ? '' : ' quiet'}" data-act="${i}" data-key="${esc(r.key)}" data-f="act:${esc(r.key)}:${i}"${a.disabled ? ' disabled' : ''}>${esc(a.label)}</button>`);
+    out.push(`<button type="button" class="btn sm" data-act="${i}" data-key="${esc(r.key)}" data-f="act:${esc(r.key)}:${i}"${a.disabled ? ' disabled' : ''}>${esc(a.label)}</button>`);
   });
   const lk = r.actions.find(a => a.kind === 'link');
   if (lk) out.push(big && !q ? `<a class="btn sm ext" href="${esc(lk.href)}" target="_blank" rel="noopener">${esc(lk.label)}</a>` : ext(lk.href, lk.label));
@@ -137,7 +137,8 @@ function goPanel(app, p, r) {
     mine = `<section class="nx-sec"><button class="link" type="button" data-edit="${esc(key)}" data-f="rec:${esc(app.id)}">＋ 記准考證號・時間・地點</button></section>`;
   }
   const ivn = p ? lines(p.ivn, 3).map(esc).join('<br>') : '';
-  return mine + bro(app, p, [['注意', ivn], ['甄選', esc(methodText(p))]]);
+  return (r.context ? `<section class="nx-sec"><p class="ctx">${esc(r.context)}</p></section>` : '')
+    + mine + bro(app, p, [['注意', ivn], ['甄選', esc(methodText(p))]]);
 }
 // 名單、放榜、遞補公告：公告在哪裡、之後會怎樣
 function checkPanel(app, p, r) {
@@ -169,7 +170,7 @@ function panelHtml(r) {
     : r.type === 'check' ? checkPanel(app, p, r)
     : decidePanel(app, p, r);
   return `<aside class="nx-side scroll" aria-label="細節" data-k="${esc(r.key)}" style="${hue(app)}">`
-    + `<div class="nx-ph"><a class="sch" href="#schools/${encodeURIComponent(app.id)}">${esc(shortName(app))}</a><span class="dept">${esc([main, ...quals].join(' '))}</span><span class="st">${esc(statusOf(app))}</span></div>`
+    + `<div class="nx-ph"><a class="sch" href="#schools/${encodeURIComponent(app.id)}">${esc(schoolName(app))}</a><span class="dept">${esc([main, ...quals].join(' '))}</span><span class="st">${esc(statusOf(app))}</span></div>`
     + body
     + `<p class="nx-open"><a class="link" href="#schools/${encodeURIComponent(app.id)}">打開 ${esc(shortName(app))} →</a></p></aside>`;
 }
@@ -250,7 +251,7 @@ function submitAsk(form) {
     const d = fe.date.value, t = normTime(fe.time.value);
     if (!d) { V.ask.err = '日期要填'; render(); return; }
     if (t === null) { V.ask.err = '時間寫成 17:00'; render(); return; }
-    run(r, a, {date: d, time: t});
+    run(r, a, {date: d, time: t, id: uid()});
   }
 }
 // 勾完最後一個部分，那一列會消失：給提示和復原（狀態變了就寫新的狀態字，例如「已報名」）

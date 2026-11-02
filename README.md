@@ -86,7 +86,7 @@ journalctl -u special-study -f              # 看紀錄
 | `data/records.json` | 你的紀錄：學校、日期、備審、設定（第一次儲存時建立） | 不要（已在 `.gitignore`） |
 | `data/backups/` | 每天第一次存檔前的備份（留 30 天），以及升級、同步、匯入前的備份。`records.json` 壞掉時會自動改用最新的備份 | 不要 |
 | `data/records.example.json` | 沒有紀錄時顯示的範例 | 要 |
-| `data/overrides.json` | 簡章資料的人工修正（有的話，建資料和伺服器啟動時都會併進來） | 要 |
+| `data/overrides.json` | 簡章資料的人工修正（建資料時併進來；一般欄位伺服器啟動時也會再併一次，時程補丁 `ev` 要重跑 `npm run build-data` 才生效） | 要 |
 | `data/programs.json` | 926 個系組的整理資料與對應的簡章頁碼 | 要 |
 | `data/brochures/text/*.json` | 57 份簡章逐頁全文 | 要 |
 | `data/school-links.json` | 57 校的招生網與網路報名系統網址 | 要 |
@@ -130,6 +130,8 @@ npm run build-data   # 下載系組資料與簡章 PDF，重建 data/programs.js
 ## 安全提醒
 
 這個伺服器沒有帳號密碼，同一個網路上的人都能看到和修改你的紀錄，也能看到設定裡的 webhook 網址。只在家裡或信任的內網使用，不要把連接埠開到網際網路。
+
+為了擋 DNS rebinding（別的網站把自己的網域指到你的電腦），伺服器只接受用 IP、`localhost` 或這台電腦的名字（含 `.local`）開的網頁。要用別的名字（路由器給的 `.lan` 名稱、反向代理的網域）開，啟動時加上 `ALLOWED_HOSTS=名字1,名字2`。
 
 ## 授權
 

@@ -1,7 +1,7 @@
 // 學校（#schools、#schools/<id>）：左邊一排學校，右邊是選到的那一間。
 // 由上而下：學校名・狀態 → 下一步（大字，打勾和回答都在這裡）→ 兩欄：我的（時程・備審・紀錄）｜簡章（13px 灰字，只列這個階段用得到的）。
 // 平常都是純文字；要改就按那一段的「改」，只有那一段變成表單（規格 §0.2、§5）。
-import {$, S, esc, now, today, appById, programOf, linksOf, pdfAt, colourOf, shortName, deptName, agendaNow, orderNow, statusOf, stageOf, timelineOf, eventsFor, act, actx, mutate, mutateMany, removeApp, rerender, syncMarks, syncUnseen, ackSync, PALETTE, namesOf, actionToast, tickToast} from './core.js';
+import {$, S, esc, now, today, uid, appById, programOf, linksOf, pdfAt, colourOf, shortName, schoolName, deptName, agendaNow, orderNow, statusOf, stageOf, timelineOf, eventsFor, act, actx, mutate, mutateMany, removeApp, rerender, syncMarks, syncUnseen, ackSync, PALETTE, namesOf, actionToast, tickToast} from './core.js';
 import {setUrl, href} from './router.js';
 import {hueAttr, ext, pg, md, mdw, fmtVal, icon, isEditing, editKey, editForm, onEditSave, timeInput, normTime, popMenu, fromAhead, fromText, methodText, feeText} from './ui.js';
 import * as L from './logic.js';
@@ -12,6 +12,8 @@ const ST = {id: '', all: new Set(), docsOpen: new Set(), refOpen: new Set(), ask
 // 「改」表單的草稿：時程、備審的表單會增減列，ui.js 的草稿保留不夠用，自己記。
 const D = {key: '', rows: new Map(), del: new Set(), restore: new Set(), adds: [], docDel: new Set(), docAdds: ['']};
 let V = null;   // 這次畫的：{app, p, next}
+// 這次畫面上已經寫出簡章附註的日期列（下一步、時程）：右欄「繳件方式」就不再寫一次（規格 §0.5 每件事一個畫面只寫一次）
+let notesShown = new Set();
 const cur = () => V && appById(V.app.id);
 
 /* ---------- 小工具 ---------- */
@@ -62,7 +64,7 @@ function railHtml(sel, first) {
     const when = !r ? '' : n >= 0 && n < 7 ? L.dayLabel(r.date, now()) + (n === 0 && r.time ? ' ' + r.time : '') : md(r.date);
     const on = a.id === sel;
     return `<a class="s-rr${on ? ' tint' : ''}" href="${esc(href('schools', a.id))}" ${hueAttr(a)}${on ? ' aria-current="page"' : ''}>
-      <span class="bar-hue"></span><span class="s-rr-n"><b>${esc(shortName(a))}</b><span>${esc(statusOf(a))}</span></span>
+      <span class="bar-hue"></span><span class="s-rr-n"><b>${esc(schoolName(a))}</b><span>${esc(statusOf(a))}</span></span>
       <span class="s-rr-w${r && (r.date === t || r.overdue) ? ' hot' : ''}">${esc(when)}</span><span class="s-rr-d">${esc(deptName(a))}</span></a>`;
   };
   return `<nav class="s-rail scroll" aria-label="我的學校">${active.map(row).join('')}${ended.length ? `<div class="s-end">結束</div>${ended.map(row).join('')}` : ''}</nav>`;
@@ -82,7 +84,7 @@ function headHtml(app, p) {
 /* ---------- 下一步（焦點）：這間在接下來的第一列 ---------- */
 function nextHtml(app, n) {
   if (!n) {
-    const up = stageOf(app) === 'ended' ? null : timelineOf(app).find(r => !r.past && r.type !== 'info');
+    const up = stageOf(app) === 'ended' ? null : timelineOf(app).find(r => !r.past && !r.done && r.type !== 'info');
     return `<section class="s-next" aria-label="下一步" tabindex="-1"><div class="s-next-h">下一步</div>
       <p class="s-nothing">這間沒有要做的事</p>${up ? `<p class="s-next-sub">${esc(L.fmtDate(up.date))}${up.time ? ' ' + esc(up.time) : ''}　${esc(up.label)}</p>` : ''}</section>`;
   }
@@ -97,7 +99,7 @@ function nextHtml(app, n) {
   n.actions.forEach((a, i) => {
     if (a.kind === 'link') { link = (n.type === 'do' && !n.question) ? `<a class="btn lg ext" href="${esc(a.href)}" target="_blank" rel="noopener">${esc(a.label)}</a>` : ext(a.href, a.label); return; }
     const on = ST.ask && ST.ask.key === n.key && ST.ask.id === a.id;
-    btns += `<button class="btn lg${!n.question && a.kind === 'quiet' ? ' quiet' : ''}${on ? ' on' : ''}" type="button" data-act="${i}"${a.disabled ? ' disabled' : ''}${a.ask ? ` aria-expanded="${on}"` : ''}>${esc(a.label)}</button>`;
+    btns += `<button class="btn lg${on ? ' on' : ''}" type="button" data-act="${i}"${a.disabled ? ' disabled' : ''}${a.ask ? ` aria-expanded="${on}"` : ''}>${esc(a.label)}</button>`;
   });
   const sub = [];
   if (/^(今天|明天|後天)$/.test(day)) sub.push(L.fmtDate(n.date));
@@ -125,6 +127,9 @@ function askHtml(n) {
 /* ---------- 時程 ---------- */
 function schedHtml(app) {
   const key = 'sched:' + app.id, rows = timelineOf(app);
+  // 附註也只寫一次：下一步寫了的那幾列不寫；同一句話在時程裡只寫第一次
+  const nextNote = new Set(V && V.next && V.next.note ? V.next.rowIds : []), noteText = new Set(rows.filter(r => nextNote.has(r.rowId) && r.note).map(r => r.note));
+  notesShown = new Set(nextNote);
   if (isEditing(key)) return `<section class="sec s-sched"><div class="sec-h"><h3>時程</h3></div>${schedForm(app, key, rows)}</section>`;
   const unseen = (ST.marks && ST.marks.unseen) || new Set(), all = ST.all.has(app.id);
   if (stageOf(app) === 'ended') for (const r of rows) r.next = false;   // 結束了就沒有「下一個」
@@ -134,6 +139,11 @@ function schedHtml(app) {
   const gone = ((ST.marks && ST.marks.list) || []).filter(c => c.removed && !c.doc);
   // 「11/02 09:00 起」每個畫面只寫一次：下一步已經寫了就不寫，同一天的報名・繳費・繳件也只寫第一列
   const said = new Set(V && V.next && V.next.from && fromAhead(V.next.from, V.next.fromTime) ? V.next.rowIds : []), saidText = new Set();
+  const noteOnce = r => {
+    if (!r.note || nextNote.has(r.rowId) || noteText.has(r.note)) return '';
+    noteText.add(r.note); notesShown.add(r.rowId);
+    return r.note;
+  };
   const fromOnce = r => {
     if (!r.from || !fromAhead(r.from, r.fromTime) || said.has(r.rowId)) return '';
     const t = fromText(r.from, r.fromTime), k = r.date + t;
@@ -142,23 +152,23 @@ function schedHtml(app) {
     return t;
   };
   return `<section class="sec s-sched"><div class="sec-h"><h3>時程</h3>${more ? `<button class="link" type="button" data-all aria-expanded="${all}">${all ? '收起' : `全部 ${rows.length} 個日期`}</button>` : ''}<button class="link edit" type="button" data-edit="${esc(key)}">改</button></div>
-    ${shown.length ? `<div class="s-tl">${shown.map(r => schedRow(r, unseen, fromOnce(r))).join('')}</div>` : '<p class="empty">還沒有日期</p>'}
-    ${gone.map(c => `<p class="s-sync">簡章更新：拿掉 ${esc(c.what)} ${esc(fmtVal(c.from))}</p>`).join('')}</section>`;
+    ${shown.length ? `<div class="s-tl">${shown.map(r => schedRow(r, unseen, fromOnce(r), noteOnce(r))).join('')}</div>` : '<p class="empty">還沒有日期</p>'}
+    ${gone.map(c => `<p class="s-sync">簡章已刪除：${esc(c.what)} ${esc(fmtVal(c.from))}</p>`).join('')}</section>`;
 }
-function schedRow(r, unseen, from) {
-  const isToday = r.date === today() && !r.past;
+function schedRow(r, unseen, from, note) {
+  const isToday = r.date === today() && !r.past && !r.done;
   // 郵戳類不寫鐘點；沒時間的、還沒到的寫「時間未公布」（只有學校頁這樣寫）
   const time = r.mail === 'postmark' ? '郵戳為憑' : r.mail === 'arrive' ? (r.time ? `${r.time} 前寄達` : '寄達為憑') : r.time || (r.past ? '' : '時間未公布');
   const unk = !r.time || r.mail;
   const bits = [];
   if (r.end) bits.push(`到 ${md(r.end)}`);
   if (from) bits.push(from);
-  if (r.note) bits.push(r.note);
+  if (note) bits.push(note);
   if (r.clash && r.clash.length) bits.push('同天：' + names(r.clash));
   if (r.brochureNow) bits.push(`簡章現在是 ${md(r.brochureNow.date)}${r.brochureNow.time ? ' ' + r.brochureNow.time : ''}`);
-  if (r.gone) bits.push('簡章已拿掉');
+  if (r.gone) bits.push('簡章已刪除');
   if (r.upd && unseen.has(r.upd)) bits.push('簡章更新');
-  return `<div class="s-tr${r.past ? ' past' : ''}${r.next ? ' next' : ''}${isToday ? ' today' : ''}"><span class="d">${isToday ? '今天' : esc(L.fmtDate(r.date))}</span><span class="t${unk ? ' unk' : ''}">${esc(time)}</span><span class="w"><span class="l">${esc(r.label)}</span>${r.edited ? '<span class="edited">已改</span>' : ''}${bits.map(b => `<small>${esc(b)}</small>`).join('')}</span></div>`;
+  return `<div class="s-tr${r.past || r.done ? ' past' : ''}${r.next ? ' next' : ''}${isToday ? ' today' : ''}"><span class="d">${isToday ? '今天' : esc(L.fmtDate(r.date))}</span><span class="t${unk ? ' unk' : ''}">${esc(time)}</span><span class="w"><span class="l">${esc(r.label)}</span>${r.edited ? '<span class="edited">已改</span>' : ''}${bits.map(b => `<small>${esc(b)}</small>`).join('')}</span></div>`;
 }
 // 紀錄裡記了自己的面試時間（ivTime）：時程上那一列顯示的就是它，所以「改」也顯示、也改這個時間（存回紀錄）。
 const ivRowOf = app => { const k = (app.dates || []).some(d => d.kind === 'interview') ? 'interview' : 'exam'; return d => !!normTime(app.ivTime || '') && d.kind === k; };
@@ -172,12 +182,13 @@ function schedForm(app, key, rows) {
   const order = [...rows.map(r => r.rowId), ...(app.dates || []).map(d => d.id).filter(id => !rows.some(r => r.rowId === id))];
   const labelOf = new Map(rows.map(r => [r.rowId, r])), isIv = ivRowOf(app);
   const row = id => {
-    const d = byId.get(id), r = labelOf.get(id);
-    const v = D.rows.get(id) || {date: d.date || '', time: isIv(d) ? app.ivTime : d.time || '', label: r ? r.label : L.rowLabel(d)};
+    const d = byId.get(id), r = labelOf.get(id), label0 = r ? r.label : L.rowLabel(d);
+    const v = D.rows.get(id) || {date: d.date || '', time: isIv(d) ? app.ivTime : d.time || '', label: label0};
     const atBro = d.bro && v.date === (d.bro.date || '') && v.time === (d.bro.time || '');
     const edited = d.src === 'brochure' && d.bro && !(D.restore.has(id) && atBro) && L.isEdited({...d, date: v.date, time: isIv(d) ? d.time : v.time});
     // 簡章的名稱不給改（和備審一樣）：報名列的名稱決定要勾哪幾個部分，放榜、報到的名稱也是固定的。自己加的可以改。
-    const lab = d.src !== 'mine' ? `<span class="s-fl">${esc(v.label)}</span>` : `<input type="text" name="l:${esc(id)}" data-sf="label" data-row="${esc(id)}" value="${esc(v.label)}" aria-label="名稱" maxlength="40">`;
+    // 簡章列一律寫時程上的名稱，不看草稿（還原、改了日期再重畫時，草稿裡沒有名稱）。
+    const lab = d.src !== 'mine' ? `<span class="s-fl">${esc(label0)}</span>` : `<input type="text" name="l:${esc(id)}" data-sf="label" data-row="${esc(id)}" value="${esc(v.label)}" aria-label="名稱" maxlength="40">`;
     return `<div class="edit-row s-er"><input type="date" class="d" name="d:${esc(id)}" data-sf="date" data-row="${esc(id)}" value="${esc(v.date)}" aria-label="日期">${timeInput('t:' + id, v.time, `data-sf="time" data-row="${esc(id)}" aria-label="時間"`)}<span class="l">${lab}</span><span class="r">${edited ? `<button class="link" type="button" data-sched-restore="${esc(id)}">還原</button>` : ''}</span><button class="rm x" type="button" data-sched-rm="${esc(id)}" aria-label="刪除這個日期">✕</button></div>`;
   };
   const addRow = (v, i) => `<div class="edit-row s-er"><input type="date" class="d" name="ad:${i}" data-sf="date" data-add="${i}" value="${esc(v.date)}" aria-label="日期">${timeInput('at:' + i, v.time, `data-sf="time" data-add="${i}" aria-label="時間"`)}<span class="l"><input type="text" name="al:${i}" data-sf="label" data-add="${i}" value="${esc(v.label)}" placeholder="名稱" aria-label="名稱" maxlength="40"></span><span class="r"></span><button class="rm x" type="button" data-sched-add-rm="${i}" aria-label="不要這一列">✕</button></div>`;
@@ -217,7 +228,7 @@ function saveSched(form, key) {
     if (!date) return err(form.elements['ad:' + i], '日期要填');
     if (time === null) return err(form.elements['at:' + i], '時間寫成 17:00');
     if (!label) return err(form.elements['al:' + i], '名稱要填');
-    adds.push({date, time, label});
+    adds.push({date, time, label, id: uid()});
   }
   const dels = [...D.del].filter(id => (app.dates || []).some(d => d.id === id));
   if (!edits.length && !adds.length && !dels.length && !restores.length && ivTime === undefined) return;
@@ -264,7 +275,7 @@ function docsHtml(app) {
   const count = docs.length ? `${done}／${req.length}${generic ? '・通用項目' : ''}` : '';
   const item = d => {
     const desc = docDesc(d);
-    return `<li><label class="check task"><input type="checkbox" data-doc="${esc(d.id)}"${d.done ? ' checked' : ''}><span>${esc(d.name)}${d.opt ? ' <span class="opt">選繳</span>' : ''}${desc ? ` <span class="s-dd">${esc(desc)}</span>` : ''}${d.gone ? ' <span class="s-dd">簡章已拿掉</span>' : ''}</span></label></li>`;
+    return `<li><label class="check task"><input type="checkbox" data-doc="${esc(d.id)}"${d.done ? ' checked' : ''}><span>${esc(d.name)}${d.opt ? ' <span class="opt">選繳</span>' : ''}${desc ? ` <span class="s-dd">${esc(desc)}</span>` : ''}${d.gone ? ' <span class="s-dd">簡章已刪除</span>' : ''}</span></label></li>`;
   };
   return `<section class="sec s-docs"><div class="sec-h"><h3>備審</h3>${count ? `<span class="count">${esc(count)}</span>` : ''}${summary ? '<button class="link" type="button" data-docs-open aria-expanded="true">收起</button>' : ''}<button class="link edit" type="button" data-edit="${esc(key)}">改</button></div>
     ${docs.length ? `<ul class="s-dl">${docs.map(item).join('')}</ul>` : '<p class="empty">沒有備審項目</p>'}</section>`;
@@ -281,14 +292,14 @@ function docsForm(app, key, p) {
 function saveDocs(form, key) {
   const app = appById(key.slice(5));
   if (!app) return;
-  const adds = [...form.querySelectorAll('[data-doc-add]')].map(el => el.value.trim()).filter(Boolean);
+  const adds = [...form.querySelectorAll('[data-doc-add]')].map(el => el.value.trim()).filter(Boolean).map(name => ({name, id: uid()}));
   const dels = [...D.docDel].filter(id => (app.docs || []).some(d => d.id === id));
   if (!adds.length && !dels.length) return;
   const gone = dels.map(id => app.docs.find(d => d.id === id).name);
   mutate(app.id, a => {
     let x = a;
     for (const id of dels) x = L.applyAction(x, 'hideDoc', {docId: id}, actx(x));
-    for (const name of adds) x = L.applyAction(x, 'addDoc', {name}, actx(x));
+    for (const v of adds) x = L.applyAction(x, 'addDoc', v, actx(x));
     return x;
   }, {toast: dels.length && !adds.length ? `已移除 ${shortName(app)} ${gone.join('、')}` : `已記下：${shortName(app)} 備審`});
 }
@@ -332,12 +343,14 @@ function saveRec(form, key) {
 
 /* ---------- 簡章（右欄，依階段） ---------- */
 const NOISE_CW = /^正取報到[\n；;]*備取(等待|填寫就讀意願)$/;
-function submitLines(app, p) {
+// said：畫面上已經寫了附註的日期列（下一步、時程），那句附註這裡就不再寫；列印時全部都寫
+function submitLines(app, p, said = new Set()) {
   const out = [], ev = eventsFor(app).find(e => e.role === 'reg' && e.parts.some(pt => pt.key === 'docs'));
   if (ev) {
     const pt = ev.parts.find(x => x.key === 'docs');
     const how = pt.mail === 'postmark' ? '郵寄，郵戳為憑' : pt.mail === 'arrive' ? '寄達為憑' : /上傳/.test(pt.name) ? '網路上傳' : ev.kind === 'reg' ? '和網路報名一起繳交' : '';
-    const t = [how, ev.note].filter(Boolean).join('；');
+    // 附註已經寫了郵戳／寄達的規則（市北「限時掛號，郵戳為憑」），推出來的「郵寄，郵戳為憑」就不重複
+    const t = [pt.mail && /郵戳|寄達|送達/.test(ev.note) ? '' : how, said.has(ev.rowId) ? '' : ev.note].filter(Boolean).join('；');
     if (t) out.push(t);
   }
   if (p.rl && p.rl !== 'N') out.push(`推薦函：${p.rl.replace(/^暗/, '暗推').replace(/^明/, '明推')}`);
@@ -345,7 +358,7 @@ function submitLines(app, p) {
   return out;
 }
 // 每一塊：{k:小標, lines, page, more:'qx'|'ivn'（超過 4 行收起來）}
-function refBlocks(app, p, stage) {
+function refBlocks(app, p, stage, said) {
   const pg0 = (p.pg || [])[0] || 0, out = [];
   // 一行可以是字串，或 {html, text}（html 給畫面、text 給列印）
   const add = (k, ls, page, more) => { ls = (ls || []).map(x => x && x.html ? x : String(x || '').trim()).filter(Boolean); if (ls.length) out.push({k, lines: ls, page: page || pg0, more}); };
@@ -355,7 +368,7 @@ function refBlocks(app, p, stage) {
     const facts = [p.fee && `報名費 ${feeText(p.fee)}`, p.q != null && p.q !== '' && `名額 ${p.q}`, /^\d+$/.test(String(p.mx || '')) && `同校最多報 ${p.mx} 個系組`].filter(Boolean);
     const nw = x => `<span class="nowrap">${esc(x)}</span>`, items = method ? method.split('・') : [];
     add('甄選方式', [{html: [items.map(nw).join('・'), ...facts.map(nw)].filter(Boolean).join('　'), text: [method, ...facts].filter(Boolean).join('　')}], pg0);
-    add('繳件方式', submitLines(app, p), pg0);
+    add('繳件方式', submitLines(app, p, said), pg0);
     add('格式規定', p.fmt, findPage(p, (p.fmt || [])[0]));
     add('報名資格', lines(p.qx || p.tgt), p.qxp, 'qx');
   } else if (stage === 'applied' || stage === 'interview') {
@@ -375,7 +388,7 @@ function refBlocks(app, p, stage) {
 function refHtml(app, p) {
   if (!p) return '<aside class="s-ref" aria-label="簡章"><div class="col-h">簡章</div><p class="ref">這間沒有簡章資料</p></aside>';
   loadText(p.code);
-  const blocks = refBlocks(app, p, stageOf(app));
+  const blocks = refBlocks(app, p, stageOf(app), notesShown);
   const body = b => {
     const k = b.more ? b.more + ':' + app.id : '', open = k && ST.refOpen.has(k), cut = b.more && b.lines.length > 4 && !open;
     return `${(cut ? b.lines.slice(0, 4) : b.lines).map(l => `<p>${l.html || esc(l)}</p>`).join('')}${b.more && b.lines.length > 4 ? `<button class="link" type="button" data-ref-open="${esc(b.more)}" aria-expanded="${!!open}">${open ? '收起' : '展開'}</button>` : ''}`;
@@ -392,7 +405,7 @@ function printOne(app) {
     <h1>${esc(app.school)} ${esc(app.dept || '')}</h1>
     <div class="pmeta">${esc(mdw(today()))} 列印・${esc(statusOf(app))}${linksOf(app).apply ? '・報名系統 ' + esc(linksOf(app).apply) : ''}</div>
     <h2>時程</h2>
-    <table><tbody>${rows.map(r => `<tr${r.past ? ' class="sp-past"' : ''}><td class="sp-d">${esc(L.fmtDate(r.date))}</td><td class="sp-t">${esc(time(r))}</td><td>${esc(r.label)}${[r.note, r.clash && r.clash.length ? '同天：' + names(r.clash) : ''].filter(Boolean).map(x => ` <small>${esc(x)}</small>`).join('')}</td></tr>`).join('')}</tbody></table>
+    <table><tbody>${rows.map(r => `<tr${r.past || r.done ? ' class="sp-past"' : ''}><td class="sp-d">${esc(L.fmtDate(r.date))}</td><td class="sp-t">${esc(time(r))}</td><td>${esc(r.label)}${[r.note, r.clash && r.clash.length ? '同天：' + names(r.clash) : ''].filter(Boolean).map(x => ` <small>${esc(x)}</small>`).join('')}</td></tr>`).join('')}</tbody></table>
     <div class="sp-cols">
       <div><h2>備審</h2><ul class="sp-docs">${(app.docs || []).map(d => `<li>${d.done ? '☑' : '☐'} ${esc(d.name)}${d.opt ? '（選繳）' : ''}${docDesc(d) ? `<br><small>${esc(docDesc(d))}</small>` : ''}</li>`).join('') || '<li>—</li>'}</ul></div>
       <div>${fields.length ? `<h2>紀錄</h2><dl class="sp-dl">${fields.map(f => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join('')}</dl>` : ''}</div>
@@ -415,8 +428,9 @@ function doAction(app, a, payload, focus = '.s-next') {
 }
 function statusMenu(btn, app) {
   const w = statusOf(app), ENDED = ['rejected', 'out', 'skipped'];
+  // 沒去面試（不去面試、面試日過了）：選單裡沒有這個字，什麼都不勾，選哪一個（包括原本的已報名）都會改（setStatus 會清掉 ivSkip）
   const now_ = app.giveupDone ? 'gaveup' : app.status === 'admitted' && app.confirmDone ? 'held' : app.choice === 'decline' && !ENDED.includes(app.status) ? 'declined'
-    : L.STATUS.find(k => L.STATUS_LABEL[k] === w) || (w.startsWith('備取') ? 'waitlist' : app.status);
+    : w === '沒去面試' ? '' : L.STATUS.find(k => L.STATUS_LABEL[k] === w) || (w.startsWith('備取') ? 'waitlist' : app.status);
   const items = [...L.STATUS.map(k => ({id: k, label: L.STATUS_LABEL[k], checked: now_ === k})), '-', ...[['held', '已報到'], ['gaveup', '已放棄'], ['declined', '不去']].map(([id, label]) => ({id, label, checked: now_ === id}))];
   popMenu(btn, items, (id, it) => { if (id !== now_) doAction(cur() || app, {id: 'setStatus', label: it.label}, {status: id}, '[data-status]'); });
 }
@@ -513,7 +527,7 @@ function onSubmit(e) {
   const err = (el, msg) => { el.classList.add('bad'); el.focus(); f.querySelector('[data-ask-err]').textContent = msg; };
   if (!date) return err(f.elements.date, '日期要填');
   if (time === null) return err(f.elements.time, '時間寫成 17:00');
-  doAction(app, a, {date, time});
+  doAction(app, a, {date, time, id: uid()});
 }
 
 export function init() {

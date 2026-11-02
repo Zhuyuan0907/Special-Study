@@ -14,6 +14,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const net = require('node:net');
 const {pathToFileURL} = require('node:url');
 
 const ROOT = __dirname;
@@ -63,6 +64,12 @@ function normalizeRecords(d) {
     profile: isPlainObject(d.profile) ? d.profile : {}, notifyLastSent: d.notifyLastSent || '', updatedAt: d.updatedAt || null,
     brochureHash: typeof d.brochureHash === 'string' ? d.brochureHash : '', syncLog: Array.isArray(d.syncLog) ? d.syncLog : []};
 }
+// 讀得懂但形狀不對（apps 不是學校的清單、清單裡有不是物件的東西）也算壞掉：不然會默默變成 0 間學校，下一次存檔就蓋掉。
+function parseRecords(text) {
+  const d = JSON.parse(text);
+  if (!isPlainObject(d) || !Array.isArray(d.apps) || !d.apps.every(isPlainObject)) throw new Error('格式不對：apps 不是學校的清單');
+  return normalizeRecords(d);
+}
 function loadRecords() {
   let raw;
   try { raw = fs.readFileSync(RECORDS, 'utf8'); }
@@ -71,7 +78,7 @@ function loadRecords() {
     example = true;
     try { return normalizeRecords(JSON.parse(fs.readFileSync(RECORDS_EXAMPLE, 'utf8'))); } catch { return normalizeRecords({}); }
   }
-  try { return normalizeRecords(JSON.parse(raw)); }
+  try { return parseRecords(raw); }
   catch (e) {
     // 檔案壞了：搬到 backups，載入最新一份讀得懂的備份。絕對不要用範例資料。
     fs.mkdirSync(BACKUP_DIR, {recursive: true});
@@ -82,7 +89,7 @@ function loadRecords() {
       .map(f => ({f, t: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs})).sort((a, b) => b.t - a.t);
     for (const {f} of files) {
       try {
-        const d = normalizeRecords(JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf8')));
+        const d = parseRecords(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf8'));
         recovered = {from: f, corrupt, at: new Date().toISOString()};
         console.error(`  改用備份 backups/${f}`);
         return d;
@@ -173,14 +180,16 @@ function loadProgramData() {
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { console.warn('找不到 data/programs.json，請先執行 npm run build-data'); return; }
   const d = JSON.parse(text);
-  // data/overrides.json 平常由 build-data 併進 programs.json；這裡再併一次（同樣的值，結果不變），還沒重建時網頁和伺服器也看得到。
+  // data/overrides.json 平常由 build-data 併進 programs.json；一般欄位（docs、scr、it、mx…）這裡再併一次（同樣的值，結果不變），還沒重建時網頁和伺服器也看得到。
+  // ev 不併：overrides 裡的 ev 是時程列的「補丁」（match/set、add、delete），build-data 已經套進 programs.json；再套一次會把列換成補丁物件
+  // （伺服器起不來），也不能重複套。改了時程補丁要重跑 npm run build-data 才會生效。
   const ovFile = path.join(DATA_DIR, 'overrides.json');
   let ovText = '';
   try { ovText = fs.readFileSync(ovFile, 'utf8'); } catch { /* 沒有就算了 */ }
   if (ovText) {
     try {
       const fixes = JSON.parse(ovText).programs || {};
-      for (const p of d.programs) for (const [k, v] of Object.entries(fixes[p.i] || {})) { if (k === 'src') continue; if (v === null) delete p[k]; else p[k] = k === 'pg' && Array.isArray(v) ? [...v].sort((a, b) => a - b) : v; }
+      for (const p of d.programs) for (const [k, v] of Object.entries(fixes[p.i] || {})) { if (k === 'src' || k === 'ev') continue; if (v === null) delete p[k]; else p[k] = k === 'pg' && Array.isArray(v) ? [...v].sort((a, b) => a - b) : v; }
     } catch (e) { console.warn('data/overrides.json 讀不懂，略過：', e.message); ovText = ''; }
   }
   DB.hash = crypto.createHash('sha1').update(text).update('\0').update(ovText).digest('hex');
@@ -345,13 +354,14 @@ async function prepareRecords() {
     if (DB.hash && !records.brochureHash) { records.brochureHash = DB.hash; await saveRecords({sheets: false}); }
     return;
   }
-  // 先複製磁碟上的檔案；複製失敗就不要動資料（丟錯，啟動中止）
+  // 遷移、同步只改記憶體；都成功了才複製磁碟上的檔案（還是改之前的樣子）再寫入。遷移丟錯就不會留下備份
+  // （systemd 一直重啟時不會塞滿 backups），records.json 也沒動。複製失敗就丟錯，啟動中止、不寫檔。
+  if (needMigrate) console.log(`遷移到 v3：${migrateAll()} 間學校`);
+  if (needSync) syncAll();
   if (needMigrate || needSync) {
     const name = await backupBefore(needMigrate ? 'migrate' : 'sync');
     if (name) console.log(`已備份：backups/${name}`);
   }
-  if (needMigrate) console.log(`遷移到 v3：${migrateAll()} 間學校`);
-  if (needSync) syncAll();
   if (DB.hash) records.brochureHash = DB.hash;
   await saveRecords({sheets: false});
 }
@@ -360,14 +370,19 @@ async function prepareRecords() {
 const icsText = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 const icsDate = k => k.replace(/-/g, '');
 const icsFold = line => { const out = []; let s = line; while (Buffer.byteLength(s) > 70) { let cut = 70; while (Buffer.byteLength(s.slice(0, cut)) > 70) cut--; out.push(s.slice(0, cut)); s = ' ' + s.slice(cut); } out.push(s); return out.join('\r\n'); };
-const appName = a => L.shortSchool(a.school, ALIAS) + (a.dept ? ' ' + L.shortDept(a.dept) : '');
+const fullName = a => L.shortSchool(a.school, ALIAS) + (a.dept ? ' ' + L.shortDept(a.dept) : '');
+// 標題、提醒裡的學校名字：跟網頁一樣（同一間學校兩個系組才加系）
+const nameOf = a => L.appName(a, records.apps, ALIAS);
 // 一列的文字：「報名 ✓・繳費・郵寄備審（今天郵戳）」。行事曆會快取，abs 時不寫「今天」。
 function rowText(r, now, abs = false) {
-  const mailText = x => abs ? (x.mail === 'postmark' ? '郵戳為憑' : `${mdOf(x.date)} 前寄達`) : L.timeText(x, now);
-  const own = p => p.mail ? mailText(p) : p.own;
+  const mailText = x => abs ? (x.mail === 'postmark' ? `${x.time ? x.time + ' 前' : ''}郵戳為憑` : `${mdOf(x.date)}${x.time ? ' ' + x.time : ''} 前寄達`) : L.timeText(x, now);
+  // 郵寄的部分：網頁已經把跟這列一樣的「今天郵戳」拿掉了（own 空白），這裡也一樣，不重複寫
+  const own = p => p.mail ? (p.own ? mailText(p) : '') : p.own;
   const parts = r.parts && r.parts.length ? r.parts.map(p => p.name + (p.done ? ' ✓' : '') + (p.opt ? '（選繳）' : '') + (own(p) ? `（${own(p)}）` : '')).join('・') : r.label;
   const head = r.role === 'reg' || r.role === 'ticket' || r.role === 'intent' ? parts : r.label;
-  return head + (r.mail ? `（${mailText(r)}）` : '');
+  // 還沒開始的範圍（印准考證 11/11 16:00 起、報到 12/21 10:00 起）
+  const from = r.from && `${r.from}T${r.fromTime || '00:00'}` > now ? `（${mdOf(r.from)}${r.fromTime ? ' ' + r.fromTime : ''} 起）` : '';
+  return head + (r.mail ? `（${mailText(r)}）` : '') + from;
 }
 function buildIcs() {
   const stampNow = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
@@ -378,8 +393,9 @@ function buildIcs() {
   for (const r of rows) {
     const a = records.apps.find(x => x.id === r.appId);
     if (!a) continue;
-    const title = `${L.shortSchool(a.school, ALIAS)} ${rowText(r, now, true)}`;
-    const timed = /^\d{2}:\d{2}$/.test(r.time || '') && !r.mail;
+    const title = `${nameOf(a)} ${rowText(r, now, true)}`;
+    // 有鐘點的就是有鐘點的事件（12:00 前郵戳、17:00 前寄達也是：那個鐘點就是期限）
+    const timed = /^\d{2}:\d{2}$/.test(r.time || '');
     lines.push('BEGIN:VEVENT', `UID:${a.id}-${r.rowIds[0] || icsDate(r.date)}@special-study`, `DTSTAMP:${stampNow}`, `SUMMARY:${icsText(title)}`);
     if (timed) {
       const [h, m] = r.time.split(':').map(Number);
@@ -388,7 +404,7 @@ function buildIcs() {
     } else {
       lines.push(`DTSTART;VALUE=DATE:${icsDate(r.date)}`, `DTEND;VALUE=DATE:${icsDate(L.addDays(r.date, 1))}`);
     }
-    const desc = [appName(a), r.note, r.context, r.clash && r.clash.length ? '同天：' + r.clash.map(id => { const o = records.apps.find(x => x.id === id); return o ? L.shortSchool(o.school, ALIAS) : ''; }).filter(Boolean).join('、') : ''].filter(Boolean).join('\n');
+    const desc = [fullName(a), r.note, r.context, r.clash && r.clash.length ? '同天：' + r.clash.map(id => { const o = records.apps.find(x => x.id === id); return o ? nameOf(o) : ''; }).filter(Boolean).join('、') : ''].filter(Boolean).join('\n');
     if (desc) lines.push(`DESCRIPTION:${icsText(desc)}`);
     // 只有「要做」的事提醒：前一天一次；有時間的再於三小時前一次。
     if (r.type === 'do') {
@@ -432,8 +448,8 @@ function buildMarkdown() {
   const lines = [`# 我的特選紀錄（${nowTaipei().date}）`, '', `| ${main.join(' | ')} |`, `| ${main.map(() => '---').join(' | ')} |`, ...t.rows.map(r => `| ${r.slice(0, 12).map(esc).join(' | ')} |`), ''];
   for (const a of records.apps) {
     lines.push(`## ${a.school} ${a.dept || ''}`.trim(), '');
-    const evs = L.eventsOf(a, progOf(a.programId));
-    if (evs.length) lines.push(...evs.map(e => `- ${e.date}${e.time ? ' ' + e.time : ''} ${e.label}${e.note ? '：' + e.note : ''}`), '');
+    const evs = L.eventsOf(a, progOf(a.programId), {gone: true});
+    if (evs.length) lines.push(...evs.map(e => `- ${e.date}${e.time ? ' ' + e.time : ''} ${e.label}${e.note ? '：' + e.note : ''}${e.gone ? '（簡章已刪除）' : ''}`), '');
     if ((a.docs || []).length) lines.push(...a.docs.map(d => `- [${d.done ? 'x' : ' '}] ${d.name}`), '');
     if (a.prep) lines.push('面試準備：', '', a.prep, '');
     if (a.asked) lines.push('面試紀錄：', '', a.asked, '');
@@ -450,12 +466,12 @@ function buildDigest(days) {
   for (const r of L.agenda(records.apps, progOf, now, logicOpts()).rows) {
     if (r.date > until) continue;
     const a = records.apps.find(x => x.id === r.appId);
-    items.push({date: r.date < today ? today : r.date, time: r.date < today ? '' : (r.mail ? '' : r.time), text: `${L.shortSchool(a.school, ALIAS)} ${rowText(r, now)}${r.date < today ? `（${mdOf(r.date)} 還沒處理）` : ''}`});
+    items.push({date: r.date < today ? today : r.date, time: r.date < today ? '' : (r.mail ? '' : r.time), text: `${nameOf(a)} ${rowText(r, now)}${r.date < today ? `（${mdOf(r.date)} 還沒處理）` : ''}`});
   }
   for (const t of records.todos || []) {
     if (t.done || !isDate(t.due) || t.due > until) continue;
     const a = t.appId && records.apps.find(x => x.id === t.appId);
-    items.push({date: t.due < today ? today : t.due, time: '', text: `待辦｜${t.text}${a ? `（${L.shortSchool(a.school, ALIAS)}）` : ''}${t.due < today ? `（${mdOf(t.due)} 到期）` : ''}`});
+    items.push({date: t.due < today ? today : t.due, time: '', text: `待辦｜${t.text}${a ? `（${nameOf(a)}）` : ''}${t.due < today ? `（${mdOf(t.due)} 到期）` : ''}`});
   }
   items.sort((x, y) => x.date.localeCompare(y.date) || (x.time || '').localeCompare(y.time || ''));
   const lines = [`特選提醒｜${mdOf(today)}（${L.weekday(today)}）`];
@@ -566,9 +582,16 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
-async function persist(req, res) {
+// 寫檔失敗：先把這次在記憶體裡的改動退回去（undo），再回 500。網頁會帶同一份內容、同一個 rev 重試；
+// 伺服器沒退回的話 rev 已經加過，重試會變 409、重做一次改動（多一列），刪除的重試會 404、被當成刪好了。
+// undo 只退自己那一筆（用物件比對），等寫檔時別的請求改的東西不受影響。
+async function persist(req, res, undo) {
   try { await saveRecords(); return true; }
-  catch (e) { sendJson(req, res, 500, {error: `沒有存到（${e.code || e.message}）`}); return false; }
+  catch (e) {
+    if (undo) try { undo(); } catch (u) { console.error('退回失敗：', u); }
+    sendJson(req, res, 500, {error: `沒有存到（${e.code || e.message}）`});
+    return false;
+  }
 }
 // 伺服器保管的欄位（簡章來源、同步基準、完整文字）網頁沒送回來時，從原本那一列補回去。
 function carryOver(app, cur) {
@@ -578,6 +601,14 @@ function carryOver(app, cur) {
   for (const d of Array.isArray(app.dates) ? app.dates : []) { const o = isPlainObject(d) && oldDates.get(d.id); if (o) for (const k of ['src', 'ref', 'bro', 'from', 'fromTime', 'upd', 'gone', 'brochureNow']) if (d[k] === undefined && o[k] !== undefined) d[k] = o[k]; }
   for (const d of Array.isArray(app.docs) ? app.docs : []) { const o = isPlainObject(d) && oldDocs.get(d.id); if (o) for (const k of ['src', 'ref', 'full', 'opt', 'gone']) if (d[k] === undefined && o[k] !== undefined) d[k] = o[k]; }
   for (const k of ['v', 'hidden', 'color']) if (app[k] === undefined && cur[k] !== undefined) app[k] = cur[k];
+}
+// 匯入或網頁送來的一間學校：清單欄位一定是陣列、裡面一定是物件；不然 logic.js 會丟錯，每個畫面和 .ics 都會壞掉。
+function cleanApp(a) {
+  const o = {...a};
+  for (const k of ['dates', 'docs', 'regSteps']) o[k] = Array.isArray(a[k]) ? a[k].filter(isPlainObject) : [];
+  o.hidden = Array.isArray(a.hidden) ? a.hidden.filter(x => typeof x === 'string') : [];
+  if (a.seen !== undefined) o.seen = Array.isArray(a.seen) ? a.seen.filter(x => typeof x === 'string') : [];
+  return o;
 }
 const lanAddresses = () => Object.values(os.networkInterfaces()).flat().filter(n => n && n.family === 'IPv4' && !n.internal).map(n => n.address);
 const cleanTodos = list => list.filter(t => isPlainObject(t) && ID_RE.test(String(t.id || '')) && typeof t.text === 'string').slice(0, 500)
@@ -643,7 +674,7 @@ async function api(req, res, url) {
   if (resource === 'brochure' && req.method === 'GET' && id) {
     const pages = DB.pages.get(id);
     if (!pages) return sendJson(req, res, 404, {error: '沒有這間學校的簡章全文'});
-    const want = String(url.searchParams.get('pages') || '').split(',').map(Number).filter(n => n >= 1 && n <= pages.length).slice(0, 12);
+    const want = [...new Set(String(url.searchParams.get('pages') || '').split(',').map(Number))].filter(n => Number.isInteger(n) && n >= 1 && n <= pages.length).slice(0, 12);
     const school = DB.schools.find(s => s.code === id);
     return sendJson(req, res, 200, {code: id, school: school && school.name, total: pages.length, pages: want.map(n => ({page: n, text: pages[n - 1].text}))});
   }
@@ -657,19 +688,24 @@ async function api(req, res, url) {
       const cur = i >= 0 ? records.apps[i] : null;
       // 每間學校一個版本號：網頁手上的版本不是最新的，就把最新的給它，讓它重做一次改動。
       if (cur && Number(body.rev || 0) !== Number(cur.rev || 0)) return sendJson(req, res, 409, {error: '這間學校在別的地方改過了', app: cur});
+      // 伺服器存過的學校 rev 都 ≥ 1；剛加的是 0。手上是舊版本、伺服器卻沒有：別的分頁或裝置刪掉了，不要把它加回去。
+      if (!cur && Number(body.rev || 0) > 0) return sendJson(req, res, 410, {error: '這間學校已經在別的地方刪掉了'});
       let app = {...body, id};
       carryOver(app, cur);
+      app = cleanApp(app);
       if (app.v !== 3) app = L.migrateApp(app, progOf(app.programId), cur ? colorIndex(cur) : records.apps.length);
       app.rev = (Number(cur && cur.rev) || 0) + 1;
       app.updatedAt = new Date().toISOString();
       if (i >= 0) records.apps[i] = app; else records.apps.push(app);
-      if (!await persist(req, res)) return;
+      if (!await persist(req, res, () => { const j = records.apps.indexOf(app); if (j < 0) return; if (cur) records.apps[j] = cur; else records.apps.splice(j, 1); })) return;
       return sendJson(req, res, 200, app);
     }
     if (req.method === 'DELETE') {
-      if (!records.apps.some(a => a.id === id)) return sendJson(req, res, 404, {error: '沒有這間學校'});
+      const i = records.apps.findIndex(a => a.id === id);
+      if (i < 0) return sendJson(req, res, 404, {error: '沒有這間學校'});
+      const gone = records.apps[i];
       records.apps = records.apps.filter(a => a.id !== id);
-      if (!await persist(req, res)) return;
+      if (!await persist(req, res, () => { if (!records.apps.some(a => a.id === id)) records.apps.splice(Math.min(i, records.apps.length), 0, gone); })) return;
       return send(res, 204, '');
     }
   }
@@ -680,16 +716,17 @@ async function api(req, res, url) {
     // lastSync／lastError 是伺服器寫的，網頁手上的可能是舊的
     const prev = (records.profile && records.profile.sheets) || {};
     if (isPlainObject(body.sheets)) body.sheets = {...body.sheets, lastSync: prev.lastSync || '', lastError: prev.lastError || ''};
+    const old = records.profile;
     records.profile = body;
-    if (!await persist(req, res)) return;
+    if (!await persist(req, res, () => { if (records.profile === body) records.profile = old; })) return;
     return sendJson(req, res, 200, records.profile);
   }
 
   if (resource === 'todos' && req.method === 'PUT') {
     const body = await readBody(req);
     if (!Array.isArray(body)) return sendJson(req, res, 400, {error: '待辦清單格式不正確'});
-    records.todos = cleanTodos(body);
-    if (!await persist(req, res)) return;
+    const old = records.todos, todos = records.todos = cleanTodos(body);
+    if (!await persist(req, res, () => { if (records.todos === todos) records.todos = old; })) return;
     return sendJson(req, res, 200, records.todos);
   }
 
@@ -721,22 +758,34 @@ async function api(req, res, url) {
     const incoming = body.apps.filter(a => isPlainObject(a) && typeof a.school === 'string' && ID_RE.test(String(a.id || '')));
     const replace = incoming.filter(a => records.apps.some(x => x.id === a.id)).length;
     if (url.searchParams.get('dry')) return sendJson(req, res, 200, {apps: incoming.length, replace});
+    // 先在副本上全部遷移、同步完；有一間讀不懂就整個不匯入（不會只匯一半），也不先備份
+    // 匯入的可能是舊簡章時的資料（v2 備份、programs.json 更新前的 v3 備份），而 brochureHash 已經是現在的：
+    // 跟啟動時一樣，遷移完馬上同步，不然要等下次簡章更新（逢甲報名截止會一直是晚一天的 11/19）
+    const syncId = 's' + Date.now().toString(36), changes = [], apps = [...records.apps];
+    for (const a of incoming) {
+      const i = apps.findIndex(x => x.id === a.id);
+      const cur = i >= 0 ? apps[i] : null;
+      let m;
+      try {
+        m = L.migrateApp(cleanApp(a), progOf(a.programId), cur ? colorIndex(cur) : apps.length);
+        const p = progOf(m.programId);
+        if (p) { const r = L.syncApp(m, p, nowKey(), {syncId}); m = r.app; changes.push(...r.changes); }
+      } catch (e) { return sendJson(req, res, 400, {error: `備份檔裡的「${a.school}」讀不懂，沒有匯入（${e.message}）`}); }
+      const app = {...m, rev: Math.max(Number(m.rev) || 0, Number(cur && cur.rev) || 0) + 1, updatedAt: new Date().toISOString()};
+      if (i >= 0) apps[i] = app; else apps.push(app);
+    }
     try { await backupBefore('import'); }
     catch (e) { return sendJson(req, res, 500, {error: `沒有先備份成功，不匯入（${e.code || e.message}）`}); }
-    for (const a of incoming) {
-      const i = records.apps.findIndex(x => x.id === a.id);
-      const cur = i >= 0 ? records.apps[i] : null;
-      const m = L.migrateApp(a, progOf(a.programId), cur ? colorIndex(cur) : records.apps.length);
-      const app = {...m, rev: Math.max(Number(m.rev) || 0, Number(cur && cur.rev) || 0) + 1, updatedAt: new Date().toISOString()};
-      if (i >= 0) records.apps[i] = app; else records.apps.push(app);
-    }
+    const before = {apps: records.apps, profile: records.profile, todos: records.todos.slice(), syncLog: records.syncLog};
+    records.apps = apps;
+    if (changes.length) records.syncLog = [...records.syncLog, {id: syncId, at: new Date().toISOString(), changes}].slice(-20);
     if (isPlainObject(body.profile)) {
       const sheets = records.profile.sheets;
       records.profile = {...records.profile, ...body.profile};
       if (sheets && isPlainObject(records.profile.sheets)) records.profile.sheets = {...records.profile.sheets, lastSync: sheets.lastSync || '', lastError: sheets.lastError || ''};
     }
     if (Array.isArray(body.todos)) for (const t of cleanTodos(body.todos)) if (!records.todos.some(x => x.id === t.id)) records.todos.push(t);
-    if (!await persist(req, res)) return;
+    if (!await persist(req, res, () => { if (records.apps === apps) Object.assign(records, before); })) return;
     return sendJson(req, res, 200, {imported: incoming.length, replaced: replace});
   }
 
@@ -753,7 +802,19 @@ async function api(req, res, url) {
 }
 
 /* ---------- server ---------- */
+// DNS rebinding：別的網站把自己的網域指到這台電腦，網頁就變成「同源」，能讀到紀錄和 webhook、也能帶 X-Client 寫入。
+// 所以只接受用 IP、localhost 或這台電腦的名字（含 .local）開的網頁；其他名字（路由器的 .lan、反向代理的網域）放在 ALLOWED_HOSTS（逗號分隔）。
+const HOST_NAMES = new Set(['localhost', os.hostname(), `${os.hostname()}.local`, ...String(process.env.ALLOWED_HOSTS || '').split(',')]
+  .map(h => h.trim().toLowerCase()).filter(Boolean));
+function hostAllowed(host) {
+  if (host === undefined) return true; // 沒有 Host 的（HTTP/1.0）不是瀏覽器
+  const m = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::\d{1,5})?$/i.exec(host);
+  if (!m) return false;
+  const name = m[1].toLowerCase().replace(/\.$/, '');
+  return net.isIP(name.replace(/^\[|\]$/g, '')) !== 0 || HOST_NAMES.has(name) || name.endsWith('.localhost');
+}
 const server = http.createServer(async (req, res) => {
+  if (!hostAllowed(req.headers.host)) return send(res, 403, '請用 localhost 或內網 IP 開這個網頁（其他名字請設定 ALLOWED_HOSTS）', {'Content-Type': 'text/plain; charset=utf-8'});
   const url = new URL(req.url, 'http://localhost');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);

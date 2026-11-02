@@ -24,7 +24,11 @@ test('dayLabel / timeText', () => {
   assert.equal(L.dayLabel('2026-11-09', now), '11/09（一）');
   assert.equal(L.dayLabel('2026-11-01', now), '11/01（日）');
   assert.equal(L.timeText({date: '2026-11-02', time: '', mail: 'postmark'}, now), '今天郵戳');
-  assert.equal(L.timeText({date: '2026-11-16', time: '23:59', mail: 'postmark'}, now), '郵戳 11/16');
+  assert.equal(L.timeText({date: '2026-11-16', time: '', mail: 'postmark'}, now), '郵戳 11/16');
+  // 有鐘點的郵戳：那個鐘點就是期限（D-b）
+  assert.equal(L.timeText({date: '2026-11-16', time: '23:59', mail: 'postmark'}, now), '11/16 23:59 前郵戳');
+  assert.equal(L.timeText({date: '2026-11-02', time: '12:00', mail: 'postmark'}, now), '今天 12:00 前郵戳');
+  assert.equal(L.timeText({date: '2027-03-03', time: '12:00', mail: 'arrive'}, now), '03/03 12:00 前寄達');
   assert.equal(L.timeText({date: '2026-11-16', time: '', mail: 'arrive'}, now), '11/16 前寄達');
   assert.equal(L.timeText({date: '2026-11-16', time: '15:30'}, now), '15:30');
   assert.equal(L.timeText({date: '2026-11-16', time: ''}, now), '');
@@ -181,13 +185,17 @@ test('同步：沒改過的列更新、改過的留著、刪掉的不回來、�
   const fcChanges = r.changes.filter(c => c.school === fc.school).map(c => `${c.what} ${c.from} → ${c.to}`);
   assert.deepEqual(fcChanges, ['報名截止 11/19 → 11/18 23:59', '一階名單 12/01 14:00 → 11/30 14:00']);
   // 再同步一次：沒有新改動
-  assert.deepEqual(syncAll(r.apps, progs).changes.filter(c => !c.conflict), []);
-  // 還原：拿回簡章值（bro），簡章現在的值留在 brochureNow 直到下次同步
+  assert.deepEqual(syncAll(r.apps, progs).changes, []);
+  // 衝突：基準（bro）換成簡章的新值，所以還原直接回到簡章現在的 09:00；簡章沒再變就不會再報一次衝突（L2）
+  assert.equal(yr.bro.time, '09:00');
+  assert.ok(L.isEdited(yr), '還是「已改」');
+  assert.deepEqual(syncAll(r.apps, progs).changes, [], '同一份簡章再同步：不再報衝突');
   const back = L.applyAction(r.apps.find(a => a.id === yi.id), 'restoreDate', {rowId: iv.id});
-  assert.equal(back.dates.find(d => d.id === iv.id).time, '');
-  assert.ok(!L.isEdited(back.dates.find(d => d.id === iv.id)));
-  const again = L.syncApp(back, progs.get(yi.programId), '2026-11-02T03:00').app.dates.find(d => d.id === iv.id);
-  assert.equal(again.time, '09:00', '還原後下一次同步拿到簡章的新時間');
+  const bd = back.dates.find(d => d.id === iv.id);
+  assert.equal(bd.time, '09:00');
+  assert.equal(bd.brochureNow, null, 'null 不是刪掉：伺服器 carryOver 才不會補回舊的「簡章現在是」');
+  assert.ok(!L.isEdited(bd));
+  assert.deepEqual(L.syncApp(back, progs.get(yi.programId), '2026-11-02T03:00').changes, []);
 });
 test('同步：少掉四成以上的列就跳過；NFKC 一樣的字不算改動', {skip: SKIP}, () => {
   const progs = withProgram('116-005-010', p => { p.ev = p.ev.slice(0, 4); });

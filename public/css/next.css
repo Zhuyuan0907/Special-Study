@@ -45,7 +45,6 @@
 #view-next .nx-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 12px; min-height: 24px; font-size: 13px; }
 #view-next .nx-acts:empty { display: none; }
 #view-next .nx-acts .btn.sm { height: 26px; }
-#view-next .nx-acts .btn.quiet { padding: 0 4px; }
 /* 按了「備取」「遞補上了」「換到」之後：在那一列底下多一行 */
 #view-next .nx-ask { grid-column: 3 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0 4px; font-size: 13px; color: var(--ink-2); line-height: 20px; cursor: default; }
 #view-next .nx-ask label { display: inline-flex; align-items: center; gap: 8px; }

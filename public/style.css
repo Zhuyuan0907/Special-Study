@@ -185,6 +185,8 @@ input[type="date"], input[type="time"] { font-variant-numeric: tabular-nums; }
 .edit-form input:not([type="checkbox"]):not([type="radio"]), .edit-form select { height: 30px; padding: 0 6px; }
 .edit-form textarea { width: 100%; min-height: 64px; }
 input.tm { width: 6em; }
+/* 空白的時間欄就是空白：「17:00」只在點進去時出現，免得看起來像已經填好的時間 */
+input.tm:not(:focus)::placeholder { color: transparent; }
 input[type="date"] { min-width: 9.5em; }
 .edit-row { display: grid; grid-template-columns: var(--cols, minmax(0, 1fr)); column-gap: 8px; row-gap: 4px; align-items: center; min-width: 0; }
 .edit-row > * { min-width: 0; }

@@ -7,7 +7,7 @@ import * as schools from './schools.js';
 import * as calendar from './calendar.js';
 import * as add from './add.js';
 import * as settings from './settings.js';
-import {shortSchool} from './logic.js';
+import {shortSchool, syncHeadline} from './logic.js';
 
 const VIEWS = {next, schools, calendar};
 let booted = false;
@@ -78,7 +78,10 @@ function syncToast() {
   const fresh = logs.filter((x, i) => !seen.includes(x.id) && logs.findIndex(y => y.id === x.id) === i);
   if (!fresh.length) return;
   ls.set('syncSeen', [...seen, ...fresh.map(x => x.id)].slice(-50));
-  const ch = fresh.flatMap(x => x.changes), c = ch[0];
+  // 前後看起來一樣的（舊版記下的「12/02 10:00 → 12/02 10:00」）不算；一則提示只寫最要緊的一項（logic.syncHeadline）
+  const ch = fresh.flatMap(x => x.changes).filter(c => fmtVal(c.from) !== fmtVal(c.to));
+  if (!ch.length) return;
+  const c = syncHeadline(ch);
   const app = appById(c.appId);
   const name = app ? shortName(app) : shortSchool(c.school || '', P.aliases);
   const what = c.from && c.to ? `${c.what} ${fmtVal(c.from)} → ${fmtVal(c.to)}` : c.to ? `新增 ${c.what} ${fmtVal(c.to)}` : `${c.what} 移除`;

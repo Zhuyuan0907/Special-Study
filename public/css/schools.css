@@ -75,8 +75,6 @@
 #view-schools .s-ef { display: flex; flex-direction: column; gap: 6px; }
 #view-schools .s-er { --cols: 9.6em 5.2em minmax(0, 1fr) 2.6em 24px; }
 #view-schools .s-er input.tm { width: 100%; }
-/* 沒有時間的列：空白就是空白，不要讓「17:00」的提示看起來像真的時間；點進去才看到格式 */
-#view-schools .s-er input.tm:not(:focus)::placeholder { color: transparent; }
 #view-schools .s-er .s-fl { display: block; padding: 0 2px; line-height: 30px; color: var(--ink-2); }
 
 /* 備審 */

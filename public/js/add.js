@@ -1,7 +1,7 @@
 // ＋ 加學校（#dlg-add）：一個搜尋框（學校、簡稱、系名、同義詞、簡章全文），左邊結果，右邊選到的系組（programDetail）。
 // 加入就直接建一筆 v3 紀錄（logic.newApp：簡章的日期與備審），提示「已加入 中教大 資工　打開」。
 // 找不到的學校：底下「手動新增」，三個欄位（學校、系組、報名截止）。
-import {S, P, $, esc, now, request, onChange, addApp, deptName, shortName, colourOf, composing, debounce, COND_BY_ID, ls} from './core.js';
+import {S, P, $, esc, now, request, onChange, addApp, deptName, shortName, schoolName, colourOf, composing, debounce, COND_BY_ID, ls} from './core.js';
 import {openDialog, md, feeText as fee, methodText} from './ui.js';
 import {go} from './router.js';
 import * as L from './logic.js';
@@ -280,7 +280,7 @@ function addProgram(pid) {
   if (ex) { dlg().close(); go({view: 'schools', id: ex.id}); return; }
   const app = L.newApp(p, {apps: S.apps, nowMs: Date.now()});
   A.sel = pid;
-  addApp(app, {toast: `已加入 ${shortName(app)} ${deptName(app)}`, action: {label: '打開', fn: () => { if (dlg().open) dlg().close(); go({view: 'schools', id: app.id}); }}});
+  addApp(app, {toast: `已加入 ${schoolName(app)} ${deptName(app)}`, action: {label: '打開', fn: () => { if (dlg().open) dlg().close(); go({view: 'schools', id: app.id}); }}});
   // 按下的「加入」變成「已加入」，焦點回到搜尋框（鍵盤可以接著找下一個）
   if (!dlg().contains(document.activeElement) || document.activeElement === document.body) { const q = $('#add-q'); if (q) q.focus({preventScroll: true}); }
 }
@@ -291,7 +291,7 @@ function addManual(form) {
   const app = L.blankApp({school, dept, date}, {apps: S.apps, nowMs: Date.now()});
   A.manual = false; A.mErr = ''; A.draft = {school: '', dept: '', date: ''};
   renderFoot();
-  addApp(app, {toast: `已加入 ${shortName(app)}${dept ? ' ' + deptName(app) : ''}`, action: {label: '打開', fn: () => { if (dlg().open) dlg().close(); go({view: 'schools', id: app.id}); }}});
+  addApp(app, {toast: `已加入 ${schoolName(app)}${dept ? ' ' + deptName(app) : ''}`, action: {label: '打開', fn: () => { if (dlg().open) dlg().close(); go({view: 'schools', id: app.id}); }}});
 }
 function openManual() {
   A.manual = true; A.mErr = '';

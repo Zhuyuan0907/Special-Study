@@ -77,7 +77,7 @@ href('schools', app.id)                  // '#schools/<id>'
 ## 元件（class）
 
 ```html
-<!-- 按鈕：預設是外框；quiet 沒框（設定）；primary 是實心（只給「儲存」）；sm 28px、lg 36px -->
+<!-- 按鈕：預設是外框；quiet 沒框（只給設定、表單裡的取消、行事曆的訂閱這種配件；列上的答案和「不去」一律外框）；primary 是實心（只給「儲存」）；sm 28px、lg 36px -->
 <button class="btn sm" data-act="passed">在名單上</button>
 <button class="btn primary sm" type="submit">儲存</button>
 <a class="btn sm ext" href="…" target="_blank" rel="noopener">報名系統</a>   <!-- ↗ 由 CSS 加 -->
@@ -97,6 +97,7 @@ href('schools', app.id)                  // '#schools/<id>'
 <span class="when hot">今天</span> <span class="when">11/09（一）</span> <span class="unk">時間未公布</span>
 <p class="ref">限時掛號，郵戳為憑　<a class="pg" …>p.25</a></p>   <!-- 簡章：13px 灰 -->
 <span class="edited">已改</span>
+<!-- 時間欄 ui.timeInput()：空的時候就是空白（placeholder「17:00」只在點進去時出現，style.css 的 input.tm 規則） -->
 
 <!-- 列：欄寬用 --cols -->
 <div class="grid-row" style="--cols: 84px 3.4em minmax(0,1fr) auto">…</div>
@@ -123,12 +124,13 @@ href('schools', app.id)                  // '#schools/<id>'
 ## 資料
 
 ```js
-import {S, P, now, today, appById, programOf, linksOf, pdfAt, colourOf, shortName, deptName,
+import {S, P, now, today, appById, programOf, linksOf, pdfAt, colourOf, shortName, schoolName, deptName,
         agendaNow, orderNow, nextOf, timelineOf, stageOf, statusOf, eventsFor, clashNow, lopts, seasonItems} from './core.js';
 import * as L from './logic.js';
 ```
 
-- 共用的文字：`namesOf(ids)`（簡稱陣列，照學校清單的順序，「同天：…」用）、`actionToast(app, id, payload)`、`tickToast(app, key, done, row)`（回答／打勾後的提示字，接下來和學校頁一樣）在 core；`fromAhead`／`fromText`（「今天 09:00 起」「12/21 10:00 起」）、`methodText(p)`、`feeText(f)` 在 ui。
+- 學校的名字：`shortName(app)`（= `L.appName`）是簡稱；同一間學校加了兩個系組時自動加系（「宜大 資工・資安組」「宜大 資工」），列、同天、提示、行事曆都用它。旁邊已經寫了系的地方（學校清單、右欄標題、已加入提示）用 `schoolName(app)`（只有簡稱），系才不會寫兩次。
+- 共用的文字：`namesOf(ids)`（名字陣列，照學校清單的順序，「同天：…」用）、`actionToast(app, id, payload)`、`tickToast(app, key, done, row)`（回答／打勾後的提示字，接下來和學校頁一樣）在 core；`fromAhead`／`fromText`（「今天 09:00 起」「12/21 10:00 起」）、`methodText(p)`、`feeText(f)` 在 ui。
 - `S.apps`（照 createdAt 排）、`S.todos`、`S.profile`、`S.meta`（/api/meta）、`S.syncLog`。
 - `P.programs`、`P.byId`（Map：programId → 系組；每個系組多了 `school`、`code`、`region`）、`P.schools`、`P.links`（代碼 → {apply, adm}）、`P.aliases`、`P.synonyms`、`P.season`、`P.fetched`、`P.year`、`P.pdf`（有 PDF 的學校代碼）。
 - `linksOf(app)` → `{apply, adm, dept, pdf, code}`，沒有的就是 `''`。`pdfAt(app, page)` 回傳 PDF 那一頁的網址。
@@ -155,7 +157,7 @@ mutateMany([[A.id, a => L.applyAction(a, 'gaveUp', {}, actx(a))], [B.id, b => L.
 const app = L.newApp(program, {apps: S.apps, nowMs: Date.now()});
 addApp(app, {toast: `已加入 ${shortName(app)} ${deptName(app)}`, action: {label: '打開', fn: () => go({view: 'schools', id: app.id})}});
 
-// 刪除：先從畫面拿掉，提示「已刪除 市北　復原」，8 秒後才真的送出 DELETE
+// 刪除：先從畫面拿掉，提示「已刪除 市北　復原」，8 秒後、而且提示收起來後才真的送出 DELETE（滑鼠停在提示上就一直可以復原）
 removeApp(app.id);
 
 saveProfile({hideExams: true});         // 合併進 S.profile，整份送出；回傳 promise：存好 true、伺服器拒絕 false
@@ -165,10 +167,11 @@ S.todos.push(t); saveTodos();
 `mutate` 做了這些事，畫面不用管：
 1. 立刻改 `S.apps` 裡那一筆，然後重畫目前的畫面。
 2. `PUT /api/apps/:id`，帶 `X-Client: 3` 和 body 裡的 `rev`。成功後把新的 `rev` 存回來；如果沒有別的改動在排隊，就換成伺服器回傳的那一份。
-3. 遇到 409 而且回應裡有 `app`（別的分頁或手機先改過）：拿伺服器的版本，把還沒確認的 fn 依序重做，再送一次。所以 **fn 要能重做**：用「設成」不要用「切換」。`act(…,'tick',{key, done:true})` 比不帶 `done` 安全。
+3. 遇到 409 而且回應裡有 `app`（別的分頁或手機先改過）：拿伺服器的版本，把還沒確認的 fn 依序重做，再送一次。所以 **fn 要能重做**：用「設成」不要用「切換」。`act(…,'tick',{key, done:true})` 比不帶 `done` 安全。會新增一列的動作（`addDate`、`addDoc`、`promoted`）在 fn 外面先給好 `id: uid()` 放進 payload，重做時就不會多一列。
 4. 遇到 409 但沒有 `app`（伺服器擋下舊網頁）：提示列顯示「網頁已更新，請重新整理」。
-5. 遇到 500 或斷線：保留這次的改動，提示列顯示「沒有存到，重試中…」，等 1、2、4…30 秒再試。回到網頁或恢復連線時會馬上重試。
-6. 復原只會把這次改到的欄位改回去，同時間別的欄位不受影響。
+5. 遇到 500 或斷線：保留這次的改動，提示列顯示「沒有存到，重試中…」，等 1、2、4…30 秒再試。回到網頁或恢復連線時會馬上重試。（伺服器寫檔失敗時會把記憶體退回去，所以同一份、同一個 rev 重試會被接受。）
+6. 遇到其他 4xx（例如 410：這間學校已經在別的分頁或裝置刪掉了）：不再重試，重新載入，提示列留著「沒有存到：…」。
+7. 復原只會把這次改到的欄位改回去，同時間別的欄位不受影響。
 
 提示的文字：「已記下：市北 已報名」「已刪除 市北」「已加入 中教大 資工」。復原、打開由 core 加上。錯誤不要用提示，寫在那一項旁邊（`.form-err`）。
 
@@ -209,10 +212,16 @@ openDialog($('#dlg-add'));   // 一定要用這個打開，提示才看得到（
 - 小選單點外面、按 Esc、捲動或換頁都會關掉，也可以用方向鍵加 Enter 選。
 - 對話框：`#dlg-add`（`.modal.wide`，1100×720）的內容放在 `#add-body`，`#dlg-settings`（`.modal`，860×640）的內容放在 `#settings-body`。標題列和 ✕ 已經有了。要換標題就改 `#add-title`／`#set-title`。`.modal-foot` 是底下那一行。點背景、按 Esc、按 ✕ 都會關。
 
+## 每件事一個畫面只寫一次（規格 §0.5）
+
+- 學校頁：「下一步」寫了的附註，時程那幾列不再寫；同一句附註在時程裡只寫第一次；右欄「繳件方式」不寫畫面上已經有的附註，附註已經講了郵戳／寄達就不再加「郵寄，郵戳為憑」（`schools.js` 的 `notesShown`）。列印這一間照樣全部寫。
+- 「11/02 09:00 起」也一樣：下一步寫了就不寫，同一天的報名・繳費・繳件只寫第一列。
+- 時程的粗體是「下一個」：還沒過、也還沒做完的第一個里程碑（`timeline()` 的 `done`）。做完的列（勾完、回答了、報到了、不去面試）和過去的一樣畫灰。
+
 ## 簡章更新
 
-- 每一次同步，`app.js` 只會提示一次：「簡章更新：逢甲 報名截止 11/19 → 11/18 23:59，還有 2 項　打開」。
-- 學校頁：同步改到的日期列有 `upd`（那次同步的 id）。`syncUnseen(app.id)` 回傳這間還沒看過的同步 id（Set），`row.upd` 在裡面就在那一列寫灰色的「簡章更新」。`syncMarks(app.id)` 回傳變更內容（`{appId, what, from, to, added?, removed?, gone?, conflict?}`），被刪掉的列只能從這裡看到。打開那間學校時，先把這兩個存進自己的變數，再呼叫 `ackSync(app.id)`，下次打開就不會再出現。
+- 每一次同步，`app.js` 只會提示一次：「簡章更新：逢甲 報名截止 11/19 → 11/18 23:59，還有 2 項　打開」。寫哪一項由 `logic.syncHeadline(changes)` 挑（報名類的期限提早了最優先，複查、成績、備審最後），前後看起來一樣的不算。
+- 學校頁：同步改到的日期列有 `upd`（那次同步的 id）。`syncUnseen(app.id)` 回傳這間還沒看過的同步 id（Set），`row.upd` 在裡面就在那一列寫灰色的「簡章更新」。`syncMarks(app.id)` 回傳變更內容（`{appId, what, from, to, kind, added?, removed?, gone?, conflict?, doc?}`），被刪掉的列只能從這裡看到。打開那間學校時，先把這兩個存進自己的變數，再呼叫 `ackSync(app.id)`，下次打開就不會再出現。
 
 ## 快速鍵（app.js 處理，畫面不要再綁）
 
