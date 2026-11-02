@@ -57,12 +57,14 @@ let writeChain = Promise.resolve();
 let example = false;   // 還在用範例資料（records.json 不存在）：使用者第一次動作才寫檔
 let recovered = null;  // records.json 壞掉，從備份救回來的話記在這裡（/api/meta 會告訴網頁）
 
-const TOP = ['version', 'apps', 'todos', 'profile', 'notifyLastSent', 'updatedAt', 'brochureHash', 'syncLog'];
+const TOP = ['version', 'apps', 'todos', 'profile', 'notifyLastSent', 'updatedAt', 'brochureHash', 'syncLog', 'expenses'];
+// expenses（花費）原樣保留：遷移、同步都不碰它；舊檔（v2、還沒有花費的 v3）就是 []
 function normalizeRecords(d) {
   d = isPlainObject(d) ? d : {};
   return {version: Number(d.version) || 2, apps: Array.isArray(d.apps) ? d.apps.filter(isPlainObject) : [], todos: Array.isArray(d.todos) ? d.todos : [],
     profile: isPlainObject(d.profile) ? d.profile : {}, notifyLastSent: d.notifyLastSent || '', updatedAt: d.updatedAt || null,
-    brochureHash: typeof d.brochureHash === 'string' ? d.brochureHash : '', syncLog: Array.isArray(d.syncLog) ? d.syncLog : []};
+    brochureHash: typeof d.brochureHash === 'string' ? d.brochureHash : '', syncLog: Array.isArray(d.syncLog) ? d.syncLog : [],
+    expenses: Array.isArray(d.expenses) ? d.expenses.filter(isPlainObject) : []};
 }
 // 讀得懂但形狀不對（apps 不是學校的清單、清單裡有不是物件的東西）也算壞掉：不然會默默變成 0 間學校，下一次存檔就蓋掉。
 function parseRecords(text) {
@@ -438,8 +440,18 @@ function buildTable() {
   });
   return {headers, rows, updated: records.updatedAt};
 }
-const csvCell = v => { const s = String(v ?? ''); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-const tableCsv = () => { const t = buildTable(); return '\ufeff' + [t.headers, ...t.rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'; };
+// 文字開頭是 = + - @，Excel、Numbers、Google 試算表會當成公式（「-退票」變 #NAME?、=HYPERLINK 變連結）：前面加 ' 讓它留在文字。
+// 數字（金額、名額）不動，試算表才加得起來
+const asText = v => typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+const textRows = rows => rows.map(r => r.map(asText));
+const csvCell = v => { const s = String(asText(v) ?? ''); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const toCsv = t => '\ufeff' + [t.headers, ...t.rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+const tableCsv = () => toCsv(buildTable());
+// 花費：自動的報名費＋自己記的，照日期由舊到新；金額不加千分位（試算表才算得了）
+function buildExpenses() {
+  const lines = L.expenseLines(records.apps, records.expenses, progOf, {aliases: ALIAS}).slice().reverse();
+  return {headers: ['日期', '項目', '類別', '學校', '金額'], rows: lines.map(l => [l.date, l.what, L.CAT_LABEL[l.cat], l.school, l.unknown ? '' : l.amount])};
+}
 // 給 Notion、Obsidian 貼的 Markdown
 function buildMarkdown() {
   const t = buildTable();
@@ -528,7 +540,9 @@ async function syncSheets() {
   const cfg = (records.profile && records.profile.sheets) || {};
   if (!sheetsUrlOk(cfg.url)) throw Object.assign(new Error('請先在設定貼上 Apps Script 網址（結尾是 /exec）'), {status: 400});
   const t = buildTable();
-  const r = await postJson(cfg.url, {sheet: cfg.sheet || '特選紀錄', headers: t.headers, rows: t.rows, updated: t.updated, digest: buildDigest(14).text});
+  // extra：第二張工作表「花費」。舊的 Apps Script 不認得這個欄位，照樣只寫總表
+  const ex = buildExpenses();
+  const r = await postJson(cfg.url, {sheet: cfg.sheet || '特選紀錄', headers: t.headers, rows: textRows(t.rows), updated: t.updated, digest: buildDigest(14).text, extra: [{sheet: '花費', headers: ex.headers, rows: textRows(ex.rows)}]});
   const body = await r.text();
   if (!r.ok) throw new Error(`Google 回應 ${r.status}`);
   let parsed = null;
@@ -611,6 +625,8 @@ function cleanApp(a) {
   return o;
 }
 const lanAddresses = () => Object.values(os.networkInterfaces()).flat().filter(n => n && n.family === 'IPv4' && !n.internal).map(n => n.address);
+// 匯入的花費：認得的才收（不對的整筆略過，不會讓整份匯入失敗）
+const cleanExpenses = list => (Array.isArray(list) ? list : []).map(e => L.checkExpense(e)).filter(r => r.entry).map(r => r.entry).slice(0, 5000);
 const cleanTodos = list => list.filter(t => isPlainObject(t) && ID_RE.test(String(t.id || '')) && typeof t.text === 'string').slice(0, 500)
   .map(t => ({id: t.id, text: t.text.slice(0, 300), due: isDate(t.due) ? t.due : '', appId: typeof t.appId === 'string' ? t.appId : '', done: !!t.done, createdAt: Number(t.createdAt) || Date.now()}));
 
@@ -710,6 +726,35 @@ async function api(req, res, url) {
     }
   }
 
+  // 花費：一筆一筆存，和學校一樣有 rev（舊的回 409 加上最新的那筆；別的地方刪掉的回 410）
+  if (resource === 'expenses' && id) {
+    if (!ID_RE.test(id)) return sendJson(req, res, 400, {error: '花費的 id 格式不正確'});
+    if (req.method === 'PUT') {
+      const body = await readBody(req);
+      if (!isPlainObject(body)) return sendJson(req, res, 400, {error: '格式不正確'});
+      const r = L.checkExpense({...body, id});
+      if (r.error) return sendJson(req, res, 400, {error: r.error});
+      const i = records.expenses.findIndex(e => e.id === id);
+      const cur = i >= 0 ? records.expenses[i] : null;
+      if (cur && Number(body.rev || 0) !== Number(cur.rev || 0)) return sendJson(req, res, 409, {error: '這筆花費在別的地方改過了', expense: cur});
+      if (!cur && Number(body.rev || 0) > 0) return sendJson(req, res, 410, {error: '這筆花費已經在別的地方刪掉了'});
+      const app = r.entry.appId && records.apps.find(a => a.id === r.entry.appId);
+      const e = {...r.entry, school: r.entry.school || (app ? nameOf(app) : ''), rev: (Number(cur && cur.rev) || 0) + 1, createdAt: (cur && cur.createdAt) || r.entry.createdAt || Date.now()};
+      if (i >= 0) records.expenses[i] = e; else records.expenses.push(e);
+      if (!await persist(req, res, () => { const j = records.expenses.indexOf(e); if (j < 0) return; if (cur) records.expenses[j] = cur; else records.expenses.splice(j, 1); })) return;
+      return sendJson(req, res, 200, e);
+    }
+    if (req.method === 'DELETE') {
+      const i = records.expenses.findIndex(e => e.id === id);
+      if (i < 0) return sendJson(req, res, 404, {error: '沒有這筆花費'});
+      const gone = records.expenses[i];
+      records.expenses = records.expenses.filter(e => e.id !== id);
+      if (!await persist(req, res, () => { if (!records.expenses.some(e => e.id === id)) records.expenses.splice(Math.min(i, records.expenses.length), 0, gone); })) return;
+      return send(res, 204, '');
+    }
+  }
+  if (resource === 'expenses.csv' && req.method === 'GET') return send(res, 200, toCsv(buildExpenses()), {'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="special-study-expenses-${nowTaipei().date}.csv"`});
+
   if (resource === 'profile' && req.method === 'PUT') {
     const body = await readBody(req);
     if (!isPlainObject(body)) return sendJson(req, res, 400, {error: '格式不正確'});
@@ -757,27 +802,42 @@ async function api(req, res, url) {
     if (!isPlainObject(body) || !Array.isArray(body.apps)) return sendJson(req, res, 400, {error: '這不是有效的備份檔'});
     const incoming = body.apps.filter(a => isPlainObject(a) && typeof a.school === 'string' && ID_RE.test(String(a.id || '')));
     const replace = incoming.filter(a => records.apps.some(x => x.id === a.id)).length;
-    if (url.searchParams.get('dry')) return sendJson(req, res, 200, {apps: incoming.length, replace});
+    const inExp = cleanExpenses(body.expenses);
+    if (url.searchParams.get('dry')) return sendJson(req, res, 200, {apps: incoming.length, replace, expenses: inExp.length});
     // 先在副本上全部遷移、同步完；有一間讀不懂就整個不匯入（不會只匯一半），也不先備份
     // 匯入的可能是舊簡章時的資料（v2 備份、programs.json 更新前的 v3 備份），而 brochureHash 已經是現在的：
     // 跟啟動時一樣，遷移完馬上同步，不然要等下次簡章更新（逢甲報名截止會一直是晚一天的 11/19）
-    const syncId = 's' + Date.now().toString(36), changes = [], apps = [...records.apps];
+    const syncId = 's' + Date.now().toString(36), changes = [], ready = [];
+    let n = records.apps.length;
     for (const a of incoming) {
-      const i = apps.findIndex(x => x.id === a.id);
-      const cur = i >= 0 ? apps[i] : null;
+      const cur = records.apps.find(x => x.id === a.id);
       let m;
       try {
-        m = L.migrateApp(cleanApp(a), progOf(a.programId), cur ? colorIndex(cur) : apps.length);
+        m = L.migrateApp(cleanApp(a), progOf(a.programId), cur ? colorIndex(cur) : n++);
         const p = progOf(m.programId);
         if (p) { const r = L.syncApp(m, p, nowKey(), {syncId}); m = r.app; changes.push(...r.changes); }
       } catch (e) { return sendJson(req, res, 400, {error: `備份檔裡的「${a.school}」讀不懂，沒有匯入（${e.message}）`}); }
-      const app = {...m, rev: Math.max(Number(m.rev) || 0, Number(cur && cur.rev) || 0) + 1, updatedAt: new Date().toISOString()};
-      if (i >= 0) apps[i] = app; else apps.push(app);
+      ready.push(m);
     }
     try { await backupBefore('import'); }
     catch (e) { return sendJson(req, res, 500, {error: `沒有先備份成功，不匯入（${e.code || e.message}）`}); }
-    const before = {apps: records.apps, profile: records.profile, todos: records.todos.slice(), syncLog: records.syncLog};
+    // 等備份的時候別的分頁可能存了學校或花費：合併要用備份完當下的 records，從這裡到改 records 都是同步的，不會被插隊
+    const apps = [...records.apps], at = new Date().toISOString();
+    for (const m of ready) {
+      const i = apps.findIndex(x => x.id === m.id), cur = i >= 0 ? apps[i] : null;
+      const app = {...m, rev: Math.max(Number(m.rev) || 0, Number(cur && cur.rev) || 0) + 1, updatedAt: at};
+      if (i >= 0) apps[i] = app; else apps.push(app);
+    }
+    // 花費依 id 取代或加入（版本號接著伺服器的往上加，舊分頁手上的就變成過期的）
+    const exps = [...records.expenses];
+    for (const e of inExp) {
+      const i = exps.findIndex(x => x.id === e.id), cur = i >= 0 ? exps[i] : null;
+      const ne = {...e, rev: Math.max(e.rev, Number(cur && cur.rev) || 0) + 1, createdAt: e.createdAt || (cur && cur.createdAt) || Date.now()};
+      if (i >= 0) exps[i] = ne; else exps.push(ne);
+    }
+    const before = {apps: records.apps, profile: records.profile, todos: records.todos.slice(), syncLog: records.syncLog, expenses: records.expenses};
     records.apps = apps;
+    records.expenses = exps;
     if (changes.length) records.syncLog = [...records.syncLog, {id: syncId, at: new Date().toISOString(), changes}].slice(-20);
     if (isPlainObject(body.profile)) {
       const sheets = records.profile.sheets;
@@ -786,7 +846,7 @@ async function api(req, res, url) {
     }
     if (Array.isArray(body.todos)) for (const t of cleanTodos(body.todos)) if (!records.todos.some(x => x.id === t.id)) records.todos.push(t);
     if (!await persist(req, res, () => { if (records.apps === apps) Object.assign(records, before); })) return;
-    return sendJson(req, res, 200, {imported: incoming.length, replaced: replace});
+    return sendJson(req, res, 200, {imported: incoming.length, replaced: replace, expenses: inExp.length});
   }
 
   if (resource === 'calendar.ics' && req.method === 'GET') {

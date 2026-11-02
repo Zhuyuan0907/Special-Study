@@ -1,7 +1,7 @@
-// 網址：#next（預設）、#schools、#schools/<id>、#calendar、#calendar/2026-11。
+// 網址：#next（預設）、#schools、#schools/<id>、#calendar、#calendar/2026-11、#money。
 // 用 pushState，所以上一頁／下一頁能在畫面之間來回；重新整理會回到同一個畫面。
 // 舊網址：#week → #next、#docs → #schools、#finder → #next 並打開加學校。
-export const VIEWS = ['next', 'schools', 'calendar'];
+export const VIEWS = ['next', 'schools', 'calendar', 'money'];
 // route.open：'add' 表示要順便打開加學校（舊的 #finder），pid 是要先選好的系組。
 export const route = {view: 'next', id: '', month: '', open: '', pid: ''};
 const subs = new Set();
@@ -15,6 +15,7 @@ export function parse(hash) {
   const r = {view: 'next', id: '', month: '', open: '', pid: '', legacy: false};
   if (name === 'schools') return {...r, view: 'schools', id: arg};
   if (name === 'calendar') return {...r, view: 'calendar', month: /^\d{4}-\d{2}$/.test(arg) ? arg : ''};
+  if (name === 'money') return {...r, view: 'money'};
   if (name === 'docs') return {...r, view: 'schools', legacy: true};
   if (name === 'finder') return {...r, open: 'add', pid: arg, legacy: true};
   if (name === 'next') return r;

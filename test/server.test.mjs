@@ -71,7 +71,8 @@ test('啟動：先備份再遷移；重開不會再遷移', async t => {
     assert.equal(tp.docs.length, 4);
     assert.ok(tp.docs.every(d => d.src === 'brochure'));
     const disk = JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'));
-    assert.deepEqual(Object.keys(disk), ['version', 'apps', 'todos', 'profile', 'notifyLastSent', 'updatedAt', 'brochureHash', 'syncLog']);
+    assert.deepEqual(Object.keys(disk), ['version', 'apps', 'todos', 'profile', 'notifyLastSent', 'updatedAt', 'brochureHash', 'syncLog', 'expenses']);
+    assert.deepEqual(disk.expenses, [], 'v2 沒有花費 → []');
   } finally { await stop(s); }
   const before = fs.readFileSync(path.join(dir, 'records.json'), 'utf8');
   s = await start(dir);
@@ -222,10 +223,10 @@ test('從備份匯入：先備份，遷移後合併，?dry=1 只回報', async t
     old.apps[0].status = 'applied';
     old.apps.push(v2App('fc', '116-056-015'));
     const dry = await json(s, '/api/import?dry=1', {method: 'POST', headers: W, body: JSON.stringify(old)});
-    assert.deepEqual(dry.data, {apps: 3, replace: 2});
+    assert.deepEqual(dry.data, {apps: 3, replace: 2, expenses: 0});
     assert.equal(backups(dir).filter(f => f.startsWith('records-before-import-')).length, 0);
     const r = await json(s, '/api/import', {method: 'POST', headers: W, body: JSON.stringify({...old, profile: {tags: ['ais3']}})});
-    assert.deepEqual(r.data, {imported: 3, replaced: 2});
+    assert.deepEqual(r.data, {imported: 3, replaced: 2, expenses: 0});
     assert.equal(backups(dir).filter(f => f.startsWith('records-before-import-')).length, 1);
     const {data} = await json(s, '/api/records');
     assert.equal(data.apps.length, 3);
@@ -422,5 +423,182 @@ test('DS10 簡章全文：頁碼不是整數不會 500，重複的頁只給一�
       assert.deepEqual(r.data.pages, []);
     }
     assert.deepEqual((await json(s, '/api/brochure/032?pages=1,1,2,1')).data.pages.map(p => p.page), [1, 2]);
+  } finally { await stop(s); }
+});
+
+/* ---------- 花費（DESIGN §12） ---------- */
+const putExp = (s, id, body, headers = W) => json(s, `/api/expenses/${id}`, {method: 'PUT', headers, body: JSON.stringify(body)});
+const E1 = {date: '2026-11-13', amount: 1490, what: '高鐵 台北→台南', cat: 'travel', appId: 'fj', school: '', createdAt: 1793597310669};
+
+test('花費 PUT／DELETE：X-Client、rev、409、410、400；學校名自動補上、不認得的欄位丟掉', async t => {
+  const dir = makeDir(V2);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const s = await start(dir);
+  try {
+    assert.equal((await putExp(s, 'e1', E1, {'Content-Type': 'application/json'})).status, 409, '沒帶 X-Client');
+    assert.equal((await fetch(s.base + '/api/expenses/e1', {method: 'DELETE'})).status, 409);
+    const ok = await putExp(s, 'e1', {...E1, junk: 1, derived: true, id: 'other'});
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.data, {id: 'e1', date: '2026-11-13', amount: 1490, what: '高鐵 台北→台南', cat: 'travel', appId: 'fj', school: '輔大', rev: 1, createdAt: 1793597310669});
+    let disk = JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'));
+    assert.deepEqual(disk.expenses, [ok.data]);
+    // 版本不對：409 加上最新的那筆；改好 rev 加一，createdAt 不變
+    const stale = await putExp(s, 'e1', {...E1, rev: 0, amount: 1});
+    assert.equal(stale.status, 409);
+    assert.equal(stale.data.expense.amount, 1490);
+    const upd = await putExp(s, 'e1', {...ok.data, amount: '1,590', createdAt: 5});
+    assert.deepEqual([upd.status, upd.data.amount, upd.data.rev, upd.data.createdAt], [200, 1590, 2, 1793597310669]);
+    // 不對的：400，什麼都沒寫
+    for (const bad of [{...E1, amount: -1}, {...E1, amount: 1.5}, {...E1, amount: '12a'}, {...E1, amount: 1000001}, {...E1, what: 'x'.repeat(61)}, {...E1, date: '2026-13-01'}, {...E1, cat: 'food'}, {...E1, appId: 'a b'}, [1], 'x']) {
+      const r = await putExp(s, 'e2', bad);
+      assert.equal(r.status, 400, JSON.stringify(bad));
+      assert.ok(r.data.error);
+    }
+    assert.equal((await putExp(s, 'bad%20id', E1)).status, 400);
+    assert.equal((await json(s, '/api/records')).data.expenses.length, 1);
+    // 沒有指定學校的、學校不存在的也可以（學校可能剛加、還沒存）
+    assert.equal((await putExp(s, 'e2', {...E1, appId: '', amount: 0, what: '證件照', cat: ''})).data.cat, 'print', '沒給類別就猜');
+    assert.equal((await putExp(s, 'e3', {...E1, appId: 'nope', school: '某大'})).data.school, '某大');
+    // 刪除：204；再刪 404；別的地方刪掉的，舊分頁再寫回來是 410
+    assert.equal((await fetch(s.base + '/api/expenses/e3', {method: 'DELETE', headers: W})).status, 204);
+    assert.equal((await fetch(s.base + '/api/expenses/e3', {method: 'DELETE', headers: W})).status, 404);
+    assert.equal((await putExp(s, 'e3', {...E1, rev: 1})).status, 410);
+    assert.equal((await putExp(s, 'e3', {...E1, rev: 0})).status, 200, '復原（新的一筆，rev 0）可以');
+    // 寫檔失敗：500，記憶體退回去
+    fs.mkdirSync(path.join(dir, 'records.json.tmp'));
+    assert.equal((await putExp(s, 'e4', E1)).status, 500);
+    assert.equal((await putExp(s, 'e1', {...upd.data, amount: 7})).status, 500);
+    assert.equal((await fetch(s.base + '/api/expenses/e2', {method: 'DELETE', headers: W})).status, 500);
+    fs.rmdirSync(path.join(dir, 'records.json.tmp'));
+    const mem = (await json(s, '/api/records')).data.expenses;
+    assert.deepEqual(mem.map(e => [e.id, e.amount, e.rev]).sort(), [['e1', 1590, 2], ['e2', 0, 1], ['e3', 1490, 1]]);
+    disk = JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'));
+    assert.deepEqual(disk.expenses.map(e => e.id).sort(), ['e1', 'e2', 'e3']);
+  } finally { await stop(s); }
+});
+
+test('花費 CSV：BOM、日期・項目・類別・學校・金額；自動的報名費也在，照日期排', async t => {
+  const dir = makeDir(V2);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const s = await start(dir);
+  try {
+    await putExp(s, 'e1', E1);
+    await putExp(s, 'e2', {date: '2026-10-01', amount: 80, what: '掛號, "限時"', cat: 'mail'});
+    const r = await get(s, '/api/expenses.csv');
+    assert.equal(r.status, 200);
+    assert.match(r.type, /text\/csv/);
+    const res = await fetch(s.base + '/api/expenses.csv');
+    assert.match(res.headers.get('content-disposition'), /attachment; filename="special-study-expenses-\d{4}-\d{2}-\d{2}\.csv"/);
+    const buf = Buffer.from(await res.arrayBuffer());
+    assert.deepEqual([...buf.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    const rows = buf.toString('utf8').slice(1).trim().split('\r\n');
+    assert.equal(rows[0], '日期,項目,類別,學校,金額');
+    // 輔大（已報名，報名費 600）是自動的那一筆
+    assert.deepEqual(rows.slice(1), ['2026-10-01,"掛號, ""限時""",郵寄,,80', rows[2], '2026-11-13,高鐵 台北→台南,交通,輔大,1490']);
+    assert.match(rows[2], /^\d{4}-\d{2}-\d{2},報名費,報名費,輔大,600$/);
+  } finally { await stop(s); }
+});
+
+test('CSV：開頭是 = + - @ 的文字前面加 \'（試算表才不會當公式）；金額還是數字；項目空白用類別', async t => {
+  const v2 = {...V2, apps: V2.apps.map(a => a.id === 'fj' ? {...a, notes: '- 帶准考證'} : a)};
+  const dir = makeDir(v2);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const s = await start(dir);
+  try {
+    await putExp(s, 'e1', {date: '2026-10-02', amount: 5, what: '-退票', cat: 'other'});
+    await putExp(s, 'e2', {date: '2026-10-03', amount: 2, what: '=HYPERLINK("http://x","a")', cat: 'other'});
+    await putExp(s, 'e3', {date: '2026-10-04', amount: 3, what: '+1 加洗', cat: 'print', school: '@某大'});
+    const blank = await putExp(s, 'e4', {date: '2026-10-05', amount: 4, what: '   ', cat: 'stay'});
+    assert.deepEqual([blank.status, blank.data.what], [200, '住宿'], '項目空白：用類別');
+    const rows = (await get(s, '/api/expenses.csv')).body.replace(/^﻿/, '').trim().split('\r\n');
+    for (const r of ["2026-10-02,'-退票,其他,,5", '2026-10-03,"\'=HYPERLINK(""http://x"",""a"")",其他,,2', "2026-10-04,'+1 加洗,影印・證件,'@某大,3", '2026-10-05,住宿,住宿,,4']) assert.ok(rows.includes(r), `${r}\n${rows.join('\n')}`);
+    assert.ok(rows.some(r => /,報名費,報名費,輔大,600$/.test(r)), '金額不加 \'');
+    // 總表的筆記也一樣（「- 帶准考證」是條列，不是公式）
+    const table = (await get(s, '/api/table.csv')).body;
+    assert.match(table, /,'- 帶准考證\r\n/);
+    assert.doesNotMatch(table, /,- 帶准考證/);
+  } finally { await stop(s); }
+});
+
+test('花費：匯出、匯入（依 id 合併，壞的略過）、備份都帶著；?dry=1 回報筆數', async t => {
+  const dir = makeDir(V2);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const s = await start(dir);
+  try {
+    await putExp(s, 'e1', E1);
+    await putExp(s, 'e2', {...E1, what: '住宿', cat: 'stay', amount: 1800});
+    const exp = JSON.parse((await get(s, '/api/export')).body);
+    assert.deepEqual(exp.expenses.map(e => e.id), ['e1', 'e2']);
+    // 備份檔：每日備份是寫入前的磁碟檔；匯入前的備份有現在的花費
+    const imp = {apps: exp.apps, expenses: [{...exp.expenses[0], amount: 999, rev: 1}, {id: 'e9', date: '2026-12-01', amount: 50, what: '影印', cat: 'print'}, {id: 'bad', date: 'x', amount: 1}, 'junk']};
+    const dry = await json(s, '/api/import?dry=1', {method: 'POST', headers: W, body: JSON.stringify(imp)});
+    assert.deepEqual(dry.data, {apps: 2, replace: 2, expenses: 2});
+    const r = await json(s, '/api/import', {method: 'POST', headers: W, body: JSON.stringify(imp)});
+    assert.deepEqual(r.data, {imported: 2, replaced: 2, expenses: 2});
+    const pre = backups(dir).find(f => f.startsWith('records-before-import-'));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'backups', pre), 'utf8')).expenses.map(e => [e.id, e.amount]), [['e1', 1490], ['e2', 1800]]);
+    const got = (await json(s, '/api/records')).data.expenses;
+    assert.deepEqual(got.map(e => [e.id, e.amount]), [['e1', 999], ['e2', 1800], ['e9', 50]]);
+    assert.equal(got[0].rev, 2, '版本號接著伺服器的往上加');
+    assert.equal(got[2].rev, 1);
+    // 沒有花費的舊備份：花費不動
+    assert.equal((await json(s, '/api/import', {method: 'POST', headers: W, body: JSON.stringify({apps: exp.apps})})).status, 200);
+    assert.equal((await json(s, '/api/records')).data.expenses.length, 3);
+  } finally { await stop(s); }
+});
+
+test('匯入等備份的時候，別的分頁存好（回 200／204）的花費、學校、刪除都還在', async t => {
+  const dir = makeDir(V2);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const s = await start(dir);
+  try {
+    for (let k = 0; k < 60; k++) await putExp(s, `x${k}`, E1);
+    // 匯入還沒回來之前一直有人在存：一定有幾個落在它等備份的那段時間
+    let busy = true;
+    const imp = json(s, '/api/import', {method: 'POST', headers: W, body: JSON.stringify({apps: [], expenses: [{id: 'i1', date: '2026-12-01', amount: 50, what: '影印', cat: 'print'}]})}).finally(() => { busy = false; });
+    const done = [];
+    const lane = async (op, n) => { for (let k = 0; busy && k < 15; k++) {
+      const id = `${op}${n}-${k}`, x = `x${n * 15 + k}`;
+      if (op === 'e') done.push([op, id, (await putExp(s, id, E1)).status]);
+      if (op === 'a') done.push([op, id, (await json(s, `/api/apps/${id}`, {method: 'PUT', headers: W, body: JSON.stringify({school: '測試', v: 3, color: 0, dates: [], docs: [], regSteps: []})})).status]);
+      if (op === 'd') done.push([op, x, (await json(s, `/api/expenses/${x}`, {method: 'DELETE', headers: W})).status]);
+    } };
+    const [r] = await Promise.all([imp, ...[0, 1, 2, 3].flatMap(n => [lane('e', n), lane('a', n), lane('d', n)])]);
+    assert.equal(r.status, 200);
+    const rec = (await json(s, '/api/records')).data, exps = new Set(rec.expenses.map(e => e.id)), apps = new Set(rec.apps.map(a => a.id));
+    assert.ok(exps.has('i1'));
+    for (const [op, id, st] of done) {
+      if (op === 'e' && st === 200) assert.ok(exps.has(id), `${id} 存好了卻不見`);
+      if (op === 'a' && st === 200) assert.ok(apps.has(id), `${id} 存好了卻不見`);
+      if (op === 'd' && st === 204) assert.ok(!exps.has(id), `${id} 刪掉了又回來`);
+    }
+  } finally { await stop(s); }
+});
+
+test('花費：啟動時的遷移不碰它；沒有 expenses 的 v3 檔載入是 []、不會寫檔', async t => {
+  // v2 檔裡已經有花費（例如手動加的，還有不認得的欄位）：遷移照樣跑，花費原樣留著
+  const withExp = {...structuredClone(V2), expenses: [{id: 'k1', date: '2026-11-01', amount: 30, what: '影印', cat: 'print', appId: 'tp', school: '市北', rev: 1, createdAt: 1, note: '自己加的欄位'}]};
+  const dir = makeDir(withExp);
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  let s = await start(dir);
+  try {
+    assert.equal(backups(dir).filter(f => f.startsWith('records-before-migrate-')).length, 1);
+    const disk = JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'));
+    assert.ok(disk.apps.every(a => a.v === 3));
+    assert.deepEqual(disk.expenses, withExp.expenses);
+  } finally { await stop(s); }
+  // 拿掉 expenses 這個欄位（還沒有花費功能時的 v3 檔）：重開不遷移、不寫檔，API 給 []
+  const disk = JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'));
+  delete disk.expenses;
+  const text = JSON.stringify(disk, null, 2) + '\n';
+  fs.writeFileSync(path.join(dir, 'records.json'), text);
+  s = await start(dir);
+  try {
+    assert.deepEqual((await json(s, '/api/records')).data.expenses, []);
+    assert.equal(fs.readFileSync(path.join(dir, 'records.json'), 'utf8'), text, '不寫檔');
+    assert.equal((await get(s, '/api/expenses.csv')).status, 200);
+    // 第一次記一筆才寫進去
+    assert.equal((await putExp(s, 'n1', E1)).status, 200);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'records.json'), 'utf8')).expenses.map(e => e.id), ['n1']);
   } finally { await stop(s); }
 });

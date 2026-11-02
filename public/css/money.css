@@ -1,0 +1,126 @@
+/* 花費（js/money.js）的樣式。共用的色彩、字級、按鈕、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   左（約六成）：一直在的「記一筆」一行表單，底下依月份分組的清單（自己捲動）；右（約四成，左邊一條細線）：這次特選花了（32px）、依類別、依學校。
+   學校頁的「花費」那一塊（#view-schools .s-money）也在這裡。 */
+#view-money { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: minmax(0, 1fr); padding: 0 36px; }
+
+/* ---------- 記一筆的欄位（花費頁、學校頁同一組）：日期・項目・金額・類別・學校 ---------- */
+.mn-f { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.mn-f input[name="date"] { width: 9.6em; flex: none; }
+.mn-f input[name="what"] { flex: 1 1 12em; min-width: 9em; }
+.mn-f select { flex: none; max-width: 100%; }
+.mn-amt { display: inline-flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+.mn-amt input { width: 6.4em; text-align: right; font-variant-numeric: tabular-nums; }
+.mn-amt > span { font-size: 13px; color: var(--ink-3); }
+
+/* ---------- 左：記一筆、清單 ---------- */
+#view-money .mn-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 20px 40px 0 0; }
+#view-money .mn-add { flex: none; padding-bottom: 16px; }
+#view-money .mn-add .btn { height: 32px; }
+#view-money .mn-err { flex: none; margin: -8px 0 10px; }
+#view-money .mn-err:empty { display: none; }
+#view-money .mn-list { flex: 1; min-height: 0; border-top: 1px solid var(--line); padding-bottom: 28px; }
+#view-money .mn-empty { padding: 18px 0; }
+#view-money .mn-mon { padding: 14px 0 8px; }
+#view-money .mn-mon + .mn-mon { border-top: 1px solid var(--line); }
+#view-money .mn-mh { display: flex; align-items: baseline; gap: 12px; font-size: 15px; line-height: 24px; margin-bottom: 4px; }
+#view-money .mn-ms { font-size: 13px; font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#view-money .mn-rows { display: flex; flex-direction: column; gap: 2px; }
+
+/* 一行：日期 | 學校（寬度跟著最長的簡稱）| 項目 | 類別 | 金額（靠右） */
+#view-money .mn-row {
+  display: grid; grid-template-columns: 6.6em calc(var(--sw, 3em) + 2px) minmax(0, 1fr) auto 5.6em; column-gap: 14px; align-items: baseline;
+  width: calc(100% + 16px); margin: 0 -8px; padding: 4px 8px; border: 0; border-radius: var(--r); background: none;
+  font-size: 15px; line-height: 24px; text-align: left; color: var(--ink); cursor: pointer;
+}
+#view-money .mn-row:hover { background: color-mix(in srgb, var(--tint) 70%, transparent); }
+#view-money .mn-row > * { min-width: 0; }
+#view-money .mn-row .d { color: var(--ink-2); white-space: nowrap; }
+#view-money .mn-row .s { white-space: nowrap; color: var(--ink-2); }
+#view-money .mn-row .s.sch { color: var(--hue); }
+#view-money .mn-row .w { overflow-wrap: anywhere; }
+#view-money .mn-row .c { font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+#view-money .a, #view-schools .s-money .a { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#view-money .a.unk, #view-schools .s-money .a.unk { color: var(--ink-3); }
+
+/* 點一行 → 同一行變成表單：日期 | 學校 | 項目 | 類別 | 金額，下面 儲存／取消／刪除 */
+#view-money .mn-ed { padding: 8px 0 12px; }
+#view-money .mn-ef { display: grid; grid-template-columns: 9.6em 8.6em minmax(0, 1fr) 7.6em 7.6em; column-gap: 8px; align-items: center; font-size: 15px; line-height: 24px; }
+#view-money .mn-ef > * { min-width: 0; }
+#view-money .mn-ef input, #view-money .mn-ef select { width: 100%; }
+#view-money .mn-ef .mn-amt { display: flex; }
+#view-money .mn-ef .mn-amt input { flex: 1; width: auto; min-width: 0; }
+/* 自動的報名費：只有金額是輸入框，其他字留在原來的位置 */
+#view-money .mn-ed-fee .mn-ef { grid-template-columns: 6.6em calc(var(--sw, 3em) + 2px) minmax(0, 1fr) auto 7.6em; column-gap: 14px; }
+#view-money .mn-ed-fee .mn-ef .d { color: var(--ink-2); white-space: nowrap; }
+#view-money .mn-ed-fee .mn-ef .s { white-space: nowrap; color: var(--ink-2); }
+#view-money .mn-ed-fee .mn-ef .s.sch { color: var(--hue); }
+
+/* ---------- 右：合計（焦點，右邊是下載 CSV）、依類別、依學校 ---------- */
+#view-money .mn-sum { min-width: 0; min-height: 0; padding: 22px 0 28px 36px; border-left: 1px solid var(--line); }
+#view-money .mn-hl { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-money .mn-total { margin-top: 2px; font-size: 32px; line-height: 40px; font-weight: 600; letter-spacing: .01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#view-money .mn-total span { font-size: 20px; font-weight: 400; color: var(--ink-2); }
+#view-money .mn-sec { margin-top: 20px; }
+#view-money .mn-sec .col-h { font-weight: 400; margin-bottom: 4px; }
+#view-money .mn-kv > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 24px; }
+#view-money .mn-kv dt { min-width: 0; overflow-wrap: anywhere; }
+#view-money .mn-kv dt .sch { white-space: normal; }
+#view-money .mn-kv dd { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ---------- 學校頁的「花費」：日期 | 項目 | 金額（點一行改）；＋ 記花費 打開同一組欄位 ---------- */
+#view-schools .s-money .sec-h .count { font-variant-numeric: tabular-nums; }
+#view-schools .s-money .mn-sr {
+  display: grid; grid-template-columns: 7.2em minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline;
+  width: calc(100% + 16px); margin: 0 -8px; padding: 3px 8px; border: 0; border-radius: var(--r); background: none;
+  font-size: 15px; line-height: 24px; text-align: left; color: var(--ink); cursor: pointer;
+}
+#view-schools .s-money .mn-sr:hover { background: color-mix(in srgb, var(--tint) 70%, transparent); }
+#view-schools .s-money .mn-sr .d { white-space: nowrap; }
+#view-schools .s-money .mn-sr .w { min-width: 0; overflow-wrap: anywhere; }
+#view-schools .s-money .mn-add-s { margin-bottom: 8px; }
+/* 點一行 → 同一組欄位排成一行（放不下就換行），學校不放（就是這間） */
+#view-schools .s-money .mn-ed { padding: 4px 0 10px; }
+#view-schools .s-money .mn-ef { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; line-height: 24px; }
+#view-schools .s-money .mn-ef input[name="date"] { width: 9.6em; flex: none; }
+#view-schools .s-money .mn-ef input[name="what"] { flex: 1 1 12em; min-width: 9em; }
+#view-schools .s-money .mn-ef .d { flex: none; width: 7.2em; color: var(--ink-2); white-space: nowrap; }
+#view-schools .s-money .mn-ef .w { flex: 1 1 auto; min-width: 0; }
+#view-schools .s-money .mn-skip { margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-money .mn-skip .link { margin-left: 10px; }
+
+/* ---------- 視窗不夠大：單欄，合計在最上面、清單、再來依類別／依學校（整頁捲） ---------- */
+@media (max-width: 1180px), (max-height: 620px) {
+  #view-money { display: flex; flex-direction: column; padding: 0 24px 24px; }
+  #view-money .mn-sum { display: contents; }
+  #view-money .mn-head { order: -1; padding: 18px 0 2px; }
+  #view-money .mn-main { padding: 14px 0 0; }
+  #view-money .mn-break { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 36px; align-items: start; border-top: 1px solid var(--line); }
+  #view-money .mn-sec { margin-top: 18px; }
+}
+/* ---------- 手機 ---------- */
+@media (max-width: 600px) {
+  #view-money { padding: 0 16px 24px; }
+  #view-money .mn-row { grid-template-columns: 6.2em auto minmax(0, 1fr) auto; grid-template-areas: "d w w a" ". s c ."; column-gap: 10px; }
+  #view-money .mn-row .d { grid-area: d; }
+  #view-money .mn-row .w { grid-area: w; }
+  #view-money .mn-row .a { grid-area: a; }
+  #view-money .mn-row .s { grid-area: s; font-size: 13px; line-height: 20px; }
+  #view-money .mn-row .c { grid-area: c; line-height: 20px; }
+  /* 沒有學校的那一行：空的學校格還會留一個間距，類別就比別行往右縮；拿掉，類別和項目對齊 */
+  #view-money .mn-row .s:empty { display: none; }
+  #view-money .mn-row .s:empty ~ .c { grid-column: 2 / 4; }
+  #view-money .mn-ef { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 6px; }
+  #view-money .mn-ef .w, #view-money .mn-ef input[name="what"] { grid-column: 1 / -1; }
+  #view-money .mn-ed-fee .mn-ef .c { display: none; }
+  #view-schools .s-money .mn-sr { grid-template-columns: 6.6em minmax(0, 1fr) auto; column-gap: 6px; }
+  #view-schools .s-money .mn-ef .d { width: 6.6em; }
+  /* 清單一長，依類別排在最後就要滑過整季才看得到：縮成合計底下的一行字。記一筆還在第一個畫面，依學校留在最後（學校頁也有各校小計） */
+  #view-money .mn-head { order: -2; }
+  #view-money .mn-break { display: contents; }
+  #view-money .mn-cat { order: -1; margin-top: 2px; }
+  #view-money .mn-cat .col-h { display: none; }
+  #view-money .mn-cat .mn-kv { display: flex; flex-wrap: wrap; column-gap: 16px; }
+  #view-money .mn-cat .mn-kv > div { display: flex; gap: 6px; padding: 0; border: 0; }
+  #view-money .mn-cat dt { color: var(--ink-2); }
+  #view-money .mn-sch { order: 1; margin-top: 0; padding-top: 18px; border-top: 1px solid var(--line); }
+}

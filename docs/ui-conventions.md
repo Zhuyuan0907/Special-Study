@@ -6,22 +6,22 @@ DESIGN.md 是規格；這份只講外框（F2）提供了什麼、畫面要怎�
 
 | 檔案 | 內容 | 誰改 |
 |---|---|---|
-| `public/index.html` | 頂欄、三個 `<section class="view">`、兩個 `<dialog>`、`#bar`、`#toast`、`#print` | F2 |
+| `public/index.html` | 頂欄、四個 `<section class="view">`、兩個 `<dialog>`、`#bar`、`#toast`、`#print` | F2 |
 | `public/style.css` | 色彩、字級、按鈕、勾選框、列、區段標題、「改」表單、對話框、小選單、提示 | F2 |
-| `public/css/{next,schools,calendar,add,settings}.css` | 各畫面自己的版面 | 各畫面 |
+| `public/css/{next,schools,calendar,money,add,settings}.css` | 各畫面自己的版面（學校頁的「花費」那一塊在 money.css） | 各畫面 |
 | `public/js/core.js` | 時間、狀態 `S`／`P`、載入、`mutate`、提示、logic 的包裝 | F2 |
 | `public/js/router.js` | 網址 ↔ 畫面 | F2 |
 | `public/js/ui.js` | HTML 小零件、「改」表單、小選單、`openDialog` | F2 |
 | `public/js/app.js` | 啟動、分頁、快速鍵、標題、簡章更新提示 | F2 |
 | `public/js/logic.js` | 事件模型（純函式） | F1 |
-| `public/js/{next,schools,calendar,add,settings}.js` | 各畫面 | 各畫面 |
+| `public/js/{next,schools,calendar,money,add,settings}.js` | 各畫面（money.js 也畫學校頁的「花費」：`schoolBlock(app)`） | 各畫面 |
 
 舊版（本週、備審、找科系、精靈）的模組已經拿掉，要看就看 git 歷史。
 
 ## 畫面模組的介面
 
 ```js
-// next.js / schools.js / calendar.js
+// next.js / schools.js / calendar.js / money.js
 export function init() {}          // 啟動時呼叫一次（資料還沒到）：在自己的 section 上掛事件（委派）
 export function render(route) {}   // 資料到了、切到這個畫面、資料改了、回到網頁重新載入、時間跨過某個點時呼叫
 // add.js / settings.js
@@ -34,7 +34,7 @@ export function render() {}
 - 事件用委派，在 `init()` 掛在 `#view-next`（或 `#view-schools` 等）上一次就好。`render()` 只換 `innerHTML`，不要每次都重掛。
 - 只有目前的畫面會被 `render`。對話框（加學校、設定）如果開著時要跟著資料更新，自己 `onChange(fn)` 訂閱，並且在 `dialog.open` 為 false 時直接 return。
 - 資料還沒載完不會呼叫 `render`（`app.js` 等 `core.load()` 完成）。所以 `render` 裡 `S.loaded` 和 `P.loaded` 都是 true。簡章資料萬一沒載入，`P.byId` 是空的，`programOf(app)` 回傳 null，logic 也照樣能跑。
-- `route` = `{view, id, month}`：`#schools/<id>` 的 `id` 是 app id，`#calendar/2026-11` 的 `month` 是 `'2026-11'`，沒有就是 `''`。`#schools` 沒有 id 時，學校畫面自己決定開哪一間（規格：接下來第一列的學校），再用 `setUrl({view:'schools', id})` 把網址補齊（不會多一筆上一頁，也不會再 render 一次）。
+- `route` = `{view, id, month}`（view 是 next／schools／calendar／money）：`#schools/<id>` 的 `id` 是 app id，`#calendar/2026-11` 的 `month` 是 `'2026-11'`，沒有就是 `''`。`#schools` 沒有 id 時，學校畫面自己決定開哪一間（規格：接下來第一列的學校），再用 `setUrl({view:'schools', id})` 把網址補齊（不會多一筆上一頁，也不會再 render 一次）。
 
 ## 網址與連結
 
@@ -131,7 +131,8 @@ import * as L from './logic.js';
 
 - 學校的名字：`shortName(app)`（= `L.appName`）是簡稱；同一間學校加了兩個系組時自動加系（「宜大 資工・資安組」「宜大 資工」），列、同天、提示、行事曆都用它。旁邊已經寫了系的地方（學校清單、右欄標題、已加入提示）用 `schoolName(app)`（只有簡稱），系才不會寫兩次。
 - 共用的文字：`namesOf(ids)`（名字陣列，照學校清單的順序，「同天：…」用）、`actionToast(app, id, payload)`、`tickToast(app, key, done, row)`（回答／打勾後的提示字，接下來和學校頁一樣）在 core；`fromAhead`／`fromText`（「今天 09:00 起」「12/21 10:00 起」）、`methodText(p)`、`feeText(f)` 在 ui。
-- `S.apps`（照 createdAt 排）、`S.todos`、`S.profile`、`S.meta`（/api/meta）、`S.syncLog`。
+- `S.apps`（照 createdAt 排）、`S.expenses`（花費，records.expenses）、`S.todos`、`S.profile`、`S.meta`（/api/meta）、`S.syncLog`。
+- 金額一律 `ui.amt(n)`（「3,240」千分位，表格數字）；合計、月份、提示加「元」，清單裡的金額不加。
 - `P.programs`、`P.byId`（Map：programId → 系組；每個系組多了 `school`、`code`、`region`）、`P.schools`、`P.links`（代碼 → {apply, adm}）、`P.aliases`、`P.synonyms`、`P.season`、`P.fetched`、`P.year`、`P.pdf`（有 PDF 的學校代碼）。
 - `linksOf(app)` → `{apply, adm, dept, pdf, code}`，沒有的就是 `''`。`pdfAt(app, page)` 回傳 PDF 那一頁的網址。
 - 呼叫 logic 時用 core 的包裝（`agendaNow()`、`nextOf(app)`、`timelineOf(app)`、`stageOf(app)`、`statusOf(app)`、`orderNow()`、`clashNow()`）。它們會傳一樣的 `now`、programs Map 和 `lopts()`（apps、aliases、links、schools、season）。這樣接下來、學校頁、行事曆、標題算出來的東西才會一致。要直接呼叫 `L.xxx` 時，參數也用 `lopts()`。
@@ -159,6 +160,12 @@ addApp(app, {toast: `已加入 ${shortName(app)} ${deptName(app)}`, action: {lab
 
 // 刪除：先從畫面拿掉，提示「已刪除 市北　復原」，8 秒後、而且提示收起來後才真的送出 DELETE（滑鼠停在提示上就一直可以復原）
 removeApp(app.id);
+
+// 花費：一筆一筆存，和學校同一套（佇列、409 重做、重試、刪除 8 秒內可以復原）
+saveExpense({date, what, amount, cat, appId, school}, {toast: `已記下 ${amt(amount)} 元`});   // 沒有 id 是新的一筆（復原＝刪掉它）；有 id 就只改給的欄位
+saveExpense({id, ...e}, {toast: `已記下：${what} ${amt(amount)} 元`});   // 改一筆：寫出是哪一筆，和新記的「已記下 1,490 元」分得出來
+deleteExpense(id, {toast: `已刪除 ${what} ${amt(amount)} 元`});
+expensesNow();                           // logic.expenseLines：自動的報名費＋自己記的，新的在上面
 
 saveProfile({hideExams: true});         // 合併進 S.profile，整份送出；回傳 promise：存好 true、伺服器拒絕 false
 S.todos.push(t); saveTodos();
@@ -225,7 +232,7 @@ openDialog($('#dlg-add'));   // 一定要用這個打開，提示才看得到（
 
 ## 快速鍵（app.js 處理，畫面不要再綁）
 
-`1`／`2`／`3` 切換分頁，`N` 或 `/` 打開加學校，`Esc` 依序關小選單、關對話框、取消「改」，`⌘Z`／`Ctrl+Z` 復原最近一則提示的改動。輸入框裡、「改」表單開著時、對話框開著時，這些鍵都不作用（Esc 除外）。
+`1`／`2`／`3`／`4` 切換分頁，`N` 或 `/` 打開加學校，`Esc` 依序關小選單、關對話框、取消「改」，`⌘Z`／`Ctrl+Z` 復原最近一則提示的改動。輸入框裡、「改」表單開著時、對話框開著時，這些鍵都不作用（Esc 除外）。
 
 ## 其他
 
@@ -240,3 +247,11 @@ cd scratchpad/dev && DATA_DIR=$(sh ../tools/mkdata.sh <key>) PORT=<port> HOST=12
 node ../tools/fit.mjs "http://127.0.0.1:<port>/?now=2026-11-04T12:00#next" out.png 1440 789 [dark]
 ```
 在 Playwright 裡要動資料，可以 `await import('/js/core.js')`，拿到的是同一個模組（例如 `c.S.apps`、`c.mutate`）。
+
+## 花費（#money）
+
+- 規格 DESIGN §12。「記一筆」是唯一平常就開著的表單（新增是這個畫面的主要動作）：日期・項目・金額・類別・學校・記下，Enter 送出。類別跟著項目猜（`L.guessCat`），學校跟著日期猜（`L.guessSchool`）；自己選過就不再猜。這個表單不重畫（render 只換清單和右欄），打到一半的字、游標、輸入法都不會被每分鐘的重畫或重新載入打斷；草稿記在 money.js。
+- 清單的一行點了就變成同一行的「改」表單（key `mn:<id>`），自動的報名費（`mn:fee:<appId>`）只有金額能改，刪除換成「沒繳」（`setFee`）。
+- 學校頁「花費」：只有那間有花費（或報名費按了沒繳）才畫；「＋ 記花費」是 `mnadd:<appId>` 的「改」表單，學校就是這間（`appId` 是隱藏欄位，不放學校選單，一行放得下；要換學校到花費頁改）。不叫「＋ 記一筆」：紀錄空著的時候那一塊是「＋ 記一筆」，兩個一樣的字疊在一起分不出來。點一行和花費頁一樣變成「改」表單，key 是 `mns:<id>`（不用 `mn:`：換分頁後舊畫面的表單還在 DOM 裡，同一個 key 會找到看不見的那個），一樣不放學校選單。
+- 手機（≤600px）：依類別縮成合計底下的一行字（報名費 1,700　交通 3,745…），記一筆還在第一個畫面；依學校放在清單後面。下載 CSV 在「這次特選花了」那一行的右邊。
+- 匯出的 CSV、同步到試算表的文字開頭是 = + - @ 的，伺服器前面加 '（不然試算表當成公式）；金額是數字不動。

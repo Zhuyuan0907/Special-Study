@@ -5,14 +5,17 @@ import {S, P, $, $$, esc, request, toast, copyText, saveProfile, refresh, setThe
 import {openDialog, timeInput, normTime, md} from './ui.js';
 
 const PANES = [['ics', '行事曆訂閱'], ['notify', '每日提醒'], ['sheets', 'Google 試算表'], ['cond', '我的條件'], ['export', '備份與匯出'], ['look', '外觀']];
+// 第二張工作表「花費」在 d.extra；舊版的程式不認得 extra，照樣只寫總表
 const APPS_SCRIPT = `function doPost(e) {
   var d = JSON.parse(e.postData.contents);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(d.sheet) || ss.insertSheet(d.sheet);
-  sh.clearContents();
-  var rows = [d.headers].concat(d.rows);
-  sh.getRange(1, 1, rows.length, d.headers.length).setValues(rows);
-  sh.setFrozenRows(1);
+  [{sheet: d.sheet, headers: d.headers, rows: d.rows}].concat(d.extra || []).forEach(function (t) {
+    var sh = ss.getSheetByName(t.sheet) || ss.insertSheet(t.sheet);
+    sh.clearContents();
+    var rows = [t.headers].concat(t.rows);
+    sh.getRange(1, 1, rows.length, t.headers.length).setValues(rows);
+    sh.setFrozenRows(1);
+  });
   return ContentService.createTextOutput(JSON.stringify({ok: true, rows: d.rows.length}))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
@@ -91,7 +94,7 @@ function paneExport() {
   let confirm = '';
   if (imp) {
     const add = Math.max(0, imp.apps - imp.replace);
-    const what = imp.err ? '' : !imp.apps ? '' : imp.replace ? `會取代 ${imp.replace} 間學校${add ? `，新增 ${add} 間` : ''}` : `會新增 ${add} 間學校`;
+    const what = imp.err ? '' : !imp.apps ? '' : (imp.replace ? `會取代 ${imp.replace} 間學校${add ? `，新增 ${add} 間` : ''}` : `會新增 ${add} 間學校`) + (imp.expenses ? `，花費 ${imp.expenses} 筆` : '');
     confirm = `<div class="set-import">
       <div class="set-import-f">${esc(imp.name)}</div>
       ${imp.err ? `<p class="form-err">${esc(imp.err)}</p>` : !imp.apps ? '<p class="form-err">這個檔案裡沒有學校</p>' : `<p class="set-import-w">${esc(what)}</p>`}
@@ -102,6 +105,7 @@ function paneExport() {
     ${row('備份', `<a class="btn sm" href="/api/export" download>下載備份（JSON）</a><button class="btn sm" type="button" data-import-pick>從備份匯入…</button><input type="file" id="set-import-file" accept="application/json,.json" hidden>`)}
     ${confirm}
     ${row('總表', `<a class="btn sm" href="/api/table.csv" download>下載 CSV</a><button class="btn sm" type="button" data-copy-table>複製總表</button>`)}
+    ${row('花費', '<a class="btn sm" href="/api/expenses.csv" download>下載 CSV</a>')}
     ${status('export')}`;
 }
 function paneLook() {
@@ -110,7 +114,7 @@ function paneLook() {
   return `<h3 class="set-h">外觀</h3>
     ${row('配色', `<div class="set-inline" role="radiogroup" aria-label="配色">${[['', '跟著系統'], ['light', '淺色'], ['dark', '深色']].map(([v, l]) => `<label class="check"><input type="radio" name="theme" value="${v}"${t === v ? ' checked' : ''}><span>${l}</span></label>`).join('')}</div>`)}
     ${row('大考日期', `<label class="check"><input type="checkbox" data-exams${hide ? '' : ' checked'}><span>行事曆顯示學測、分科測驗的日期</span></label>`)}
-    ${row('快速鍵', '<span class="set-keys"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> 切換分頁　<kbd>N</kbd> 加學校　<kbd>Esc</kbd> 關閉</span>')}`;
+    ${row('快速鍵', '<span class="set-keys"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> 切換分頁　<kbd>N</kbd> 加學校　<kbd>Esc</kbd> 關閉</span>')}`;
 }
 const BODY = {ics: paneIcs, notify: paneNotify, sheets: paneSheets, cond: paneCond, export: paneExport, look: paneLook};
 
@@ -173,7 +177,7 @@ async function pickImport(file) {
   if (Array.isArray(data)) data = {apps: data};
   try {
     const r = await request('POST', '/api/import?dry=1', data);
-    imp = {name: file.name, data, apps: Number(r.apps) || 0, replace: Number(r.replace) || 0};
+    imp = {name: file.name, data, apps: Number(r.apps) || 0, replace: Number(r.replace) || 0, expenses: Number(r.expenses) || 0};
   } catch (e) { imp = {name: file.name, err: e.status === 0 ? '連不到伺服器' : e.message, apps: 0, replace: 0}; }
   render();
 }
@@ -187,7 +191,7 @@ async function doImport() {
     st.export = null;
     await refresh({force: true});
     render();
-    toast(`已匯入 ${r.imported} 間學校`);
+    toast(`已匯入 ${r.imported} 間學校${r.expenses ? `、${r.expenses} 筆花費` : ''}`);
   } catch (e) {
     imp = {...imp, err: '匯入失敗：' + (e.status === 0 ? '連不到伺服器' : e.message)};
     render();

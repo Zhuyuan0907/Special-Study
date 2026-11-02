@@ -1,11 +1,12 @@
 // 學校（#schools、#schools/<id>）：左邊一排學校，右邊是選到的那一間。
-// 由上而下：學校名・狀態 → 下一步（大字，打勾和回答都在這裡）→ 兩欄：我的（時程・備審・紀錄）｜簡章（13px 灰字，只列這個階段用得到的）。
+// 由上而下：學校名・狀態 → 下一步（大字，打勾和回答都在這裡）→ 兩欄：我的（時程・備審・紀錄・花費）｜簡章（13px 灰字，只列這個階段用得到的）。
 // 平常都是純文字；要改就按那一段的「改」，只有那一段變成表單（規格 §0.2、§5）。
 import {$, S, esc, now, today, uid, appById, programOf, linksOf, pdfAt, colourOf, shortName, schoolName, deptName, agendaNow, orderNow, statusOf, stageOf, timelineOf, eventsFor, act, actx, mutate, mutateMany, removeApp, rerender, syncMarks, syncUnseen, ackSync, PALETTE, namesOf, actionToast, tickToast} from './core.js';
 import {setUrl, href} from './router.js';
 import {hueAttr, ext, pg, md, mdw, fmtVal, icon, isEditing, editKey, editForm, onEditSave, timeInput, normTime, popMenu, fromAhead, fromText, methodText, feeText} from './ui.js';
 import * as L from './logic.js';
 import * as add from './add.js';
+import {schoolBlock} from './money.js';
 
 // 這個畫面自己的狀態（重畫時保留）：選到哪間、展開了什麼、下一步正在問什麼、打開時的簡章更新標記。
 const ST = {id: '', all: new Set(), docsOpen: new Set(), refOpen: new Set(), ask: null, marks: null, focus: ''};
@@ -569,7 +570,7 @@ export function render(route) {
   const cols = $('.s-cols', root), rail = $('.s-rail', root);
   const top = !fresh && cols ? cols.scrollTop : 0, railTop = rail ? rail.scrollTop : 0;
   root.innerHTML = `${railHtml(app.id, first)}<div class="s-page">${headHtml(app, p)}${nextHtml(app, n)}
-    <div class="s-cols scroll"><div class="s-mine"><div class="col-h">我的</div>${schedHtml(app)}${docsHtml(app)}${recHtml(app)}</div>${refHtml(app, p)}</div></div>`;
+    <div class="s-cols scroll"><div class="s-mine"><div class="col-h">我的</div>${schedHtml(app)}${docsHtml(app)}${recHtml(app)}${schoolBlock(app)}</div>${refHtml(app, p)}</div></div>`;
   if (top) $('.s-cols', root).scrollTop = top;
   if (railTop) $('.s-rail', root).scrollTop = railTop;
   // 打勾、回答之後那個元素可能已經不見了（那一列做完）：游標放回「下一步」，不要掉到頁首

@@ -1,15 +1,16 @@
-// 啟動：載入資料、三個分頁（接下來・學校・行事曆）、兩個對話框（加學校、設定）、快速鍵、分頁標題、簡章更新提示。
+// 啟動：載入資料、四個分頁（接下來・學校・行事曆・花費）、兩個對話框（加學校、設定）、快速鍵、分頁標題、簡章更新提示。
 import {S, P, $, $$, load, refresh, onChange, now, today, toast, setBar, toTop, undoLast, agendaNow, appById, shortName, ready, ls, editing} from './core.js';
 import {route, go, onRoute, start} from './router.js';
 import {wireEdit, closeEdit, editKey, snapshotEdit, restoreEdit, afterRender, closeMenu, fmtVal} from './ui.js';
 import * as next from './next.js';
 import * as schools from './schools.js';
 import * as calendar from './calendar.js';
+import * as money from './money.js';
 import * as add from './add.js';
 import * as settings from './settings.js';
 import {shortSchool, syncHeadline} from './logic.js';
 
-const VIEWS = {next, schools, calendar};
+const VIEWS = {next, schools, calendar, money};
 let booted = false;
 
 /* ---------- 畫面 ---------- */
@@ -118,8 +119,8 @@ document.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return;
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !inField(document.activeElement) && !editKey()) { if (undoLast()) e.preventDefault(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || inField(document.activeElement) || $('dialog[open]') || editKey()) return;
-  const i = ['1', '2', '3'].indexOf(e.key);
-  if (i >= 0) { e.preventDefault(); go({view: ['next', 'schools', 'calendar'][i]}); }
+  const i = ['1', '2', '3', '4'].indexOf(e.key);
+  if (i >= 0) { e.preventDefault(); go({view: ['next', 'schools', 'calendar', 'money'][i]}); }
   else if (e.key === 'n' || e.key === 'N' || e.key === '/') { e.preventDefault(); ready.then(() => add.open()); }
 });
 // 回到網頁（切回分頁、手機解鎖）就重新載入：別的裝置可能改過。「改」表單打開時不載。
@@ -128,7 +129,7 @@ addEventListener('focus', back);
 document.addEventListener('visibilitychange', back);
 
 /* ---------- 啟動 ---------- */
-for (const m of [next, schools, calendar, add, settings]) { try { m.init && m.init(); } catch (e) { console.error(e); } }
+for (const m of [next, schools, calendar, money, add, settings]) { try { m.init && m.init(); } catch (e) { console.error(e); } }
 start();
 show();
 load().then(() => { booted = true; render(); afterLoad(); }).catch(e => console.error(e));

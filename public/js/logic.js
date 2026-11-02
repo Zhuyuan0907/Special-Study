@@ -703,7 +703,7 @@ function setStep(a, key, done, name, uid) {
   s.done = !!done;
 }
 export const ACTIONS = ['tick', 'registered', 'notRegistered', 'passed', 'notPassed', 'admitted', 'waitlisted', 'rejected', 'confirmed', 'decline', 'swap', 'stay', 'keep', 'gaveUp', 'promoted', 'notYet',
-  'skipInterview', 'attendInterview', 'setStatus', 'editDate', 'restoreDate', 'addDate', 'removeDate', 'unhide', 'tickDoc', 'addDoc', 'hideDoc', 'unhideDoc', 'editRecord', 'setColor', 'editInfo'];
+  'skipInterview', 'attendInterview', 'setStatus', 'editDate', 'restoreDate', 'addDate', 'removeDate', 'unhide', 'tickDoc', 'addDoc', 'hideDoc', 'unhideDoc', 'editRecord', 'setColor', 'editInfo', 'setFee'];
 export function applyAction(app, actionId, payload = {}, ctx = {}) {
   const a = clone(app), p = ctx.program || null, uid = ctx.uid || defaultUid;
   payload = payload || {};
@@ -795,6 +795,12 @@ export function applyAction(app, actionId, payload = {}, ctx = {}) {
       for (const k of ['school', 'dept']) if (typeof payload[k] === 'string' && payload[k].trim()) a[k] = payload[k].trim();
       if (typeof payload.url === 'string') a.url = /^https?:\/\//.test(payload.url.trim()) ? payload.url.trim() : '';
       if (payload.fee !== undefined) a.fee = feeNumber(payload.fee);
+      break;
+    }
+    // 花費裡改自動的報名費（減免就改成 0）、「沒繳」藏起來
+    case 'setFee': {
+      if (payload.fee !== undefined) { const n = parseAmount(payload.fee); if (n !== null) a.fee = n; }
+      if (payload.hidden !== undefined) { if (payload.hidden) a.feeHidden = true; else delete a.feeHidden; }
       break;
     }
     default: throw new Error(`logic: unknown action ${actionId}`);
@@ -1017,4 +1023,110 @@ export function syncApp(app, program, now, opts = {}) {
   if (!ch.length && !quiet) return {app, changes: [], skipped: ''};
   a.rev = (Number(a.rev) || 0) + 1;
   return {app: a, changes: ch, skipped: ''};
+}
+
+/* ---------- 花費（DESIGN §12）：自己記的每一筆，加上每間報了名的學校自動一筆報名費 ---------- */
+export const CATS = ['reg', 'travel', 'stay', 'mail', 'print', 'other'];
+export const CAT_LABEL = {reg: '報名費', travel: '交通', stay: '住宿', mail: '郵寄', print: '影印・證件', other: '其他'};
+export const AMOUNT_MAX = 1000000;
+export const WHAT_MAX = 60;
+const EXP_ID = /^[A-Za-z0-9_.~:@+-]{1,120}$/;
+// 報名之後的狀態都繳過報名費了（沒錄取也一樣）；沒有報名的沒有
+const FEE_PAID = new Set(['applied', 'interview', 'waiting', 'admitted', 'waitlist', 'rejected', 'out']);
+// 順序有關係：「計程車去郵局」是交通，「寄宿」是住宿
+const CAT_GUESS = [['reg', /報名費/], ['travel', /高鐵|台鐵|臺鐵|火車|自強號|區間車|客運|公車|計程車|uber|捷運|機票|飛機|船票|油錢|加油|停車|車資|車票/i],
+  ['stay', /住宿|寄宿|飯店|旅館|旅店|民宿|青旅|hotel/i], ['mail', /郵|掛號|快遞|宅配|寄/], ['print', /影印|列印|照片|證件|大頭照|護貝|裝訂/]];
+export const guessCat = what => (CAT_GUESS.find(([, re]) => re.test(String(what || ''))) || ['other'])[0];
+const realDay = k => isKey(k) && new Date(utc(k)).toISOString().slice(0, 10) === k;
+// 金額：整數元，0 到 1,000,000。「1,490」「1490 元」「NT$1490」「１４９０」都看得懂；看不懂（含空白）是 null
+export function parseAmount(v) {
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 && v <= AMOUNT_MAX ? v : null;
+  const s = String(v ?? '').normalize('NFKC').trim().replace(/^(NT\$|NTD|\$)\s*/i, '').replace(/\s*元$/, '').replace(/[,\s]/g, '');
+  if (!/^\d{1,7}$/.test(s)) return null;
+  const n = Number(s);
+  return n <= AMOUNT_MAX ? n : null;
+}
+// 伺服器存之前、匯入時用：只留認得的欄位；不對的回 {error}（伺服器回 400）
+export function checkExpense(e) {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return {error: '格式不正確'};
+  const id = String(e.id ?? '');
+  if (!EXP_ID.test(id)) return {error: 'id 格式不正確'};
+  if (!realDay(e.date)) return {error: '日期要寫成 2026-11-06'};
+  const amount = parseAmount(e.amount);
+  if (amount === null) return {error: '金額要是 0 到 1,000,000 的整數'};
+  if (e.what != null && typeof e.what !== 'string') return {error: '項目要是文字'};
+  let what = String(e.what ?? '').trim();
+  if ([...what].length > WHAT_MAX) return {error: `項目最多 ${WHAT_MAX} 個字`};
+  const cat = e.cat == null || e.cat === '' ? guessCat(what) : e.cat;
+  if (!CAT_LABEL[cat]) return {error: '類別不對'};
+  // 沒寫項目（API、匯入的檔案）就用類別當項目：表單一定要有項目，空著的那一行會改不了，也不能因此丟掉金額
+  if (!what) what = CAT_LABEL[cat];
+  const appId = e.appId == null ? '' : String(e.appId);
+  if (appId && !EXP_ID.test(appId)) return {error: '學校的 id 格式不正確'};
+  const school = typeof e.school === 'string' ? [...e.school.trim()].slice(0, 40).join('') : '';
+  const rev = Number.isInteger(e.rev) && e.rev > 0 ? e.rev : 0, createdAt = Number.isFinite(Number(e.createdAt)) && Number(e.createdAt) > 0 ? Number(e.createdAt) : 0;
+  return {entry: {id, date: e.date, amount, what, cat, appId, school, rev, createdAt}};
+}
+const dayOf = v => { try { return v ? clock(typeof v === 'number' ? new Date(v) : v).date : ''; } catch { return ''; } };
+// 一間學校的報名費（自動的那一筆）：報名之後的狀態，或準備中但已經勾了繳費。沒有報名、按了「沒繳」的沒有。
+// 金額是 app.fee（簡章的報名費；改這一筆就是改它）；日期是繳費（沒有就報名）的截止日，都沒有就用最後一次改紀錄的那天。
+export function feeLine(app, program) {
+  if (!app || app.feeHidden) return null;
+  const st = STATUS_LABEL[app.status] ? app.status : 'prep';
+  const payTicked = (app.regSteps || []).some(s => s && s.key === 'pay' && s.done);
+  if (!FEE_PAID.has(st) && !(st === 'prep' && payTicked)) return null;
+  const parts = eventsOf(app, program).filter(e => e.role === 'reg').flatMap(e => e.parts);
+  const at = parts.find(pt => pt.key === 'pay') || parts.find(pt => pt.key === 'reg') || parts[0];
+  const amount = parseAmount(app.fee);
+  return {id: 'fee:' + app.id, date: at ? at.date : dayOf(app.updatedAt) || dayOf(Number(app.createdAt)), amount: amount ?? 0, what: CAT_LABEL.reg, cat: 'reg', appId: app.id, school: '', derived: true, createdAt: Number(app.createdAt) || 0, ...(amount === null ? {unknown: true} : {})};
+}
+// 花費的每一行（自動的報名費＋自己記的），新的在上面：日期、再來是記下的時間。學校名用現在的簡稱；學校刪掉了就用記下時的名字。
+export function expenseLines(apps = [], expenses = [], programs = null, opts = {}) {
+  const get = progIndex(programs), aliases = opts.aliases || {}, list = (apps || []).filter(a => a && typeof a === 'object'), byId = new Map(list.map(a => [a.id, a]));
+  const out = [];
+  for (const a of list) { const f = feeLine(a, get(a.programId)); if (f) out.push({...f, school: appName(a, list, aliases)}); }
+  for (const e of expenses || []) {
+    if (!e || typeof e !== 'object') continue;
+    const a = e.appId ? byId.get(e.appId) : null;
+    out.push({id: String(e.id ?? ''), date: isKey(e.date) ? e.date : '', amount: parseAmount(e.amount) ?? 0, what: String(e.what ?? ''), cat: CAT_LABEL[e.cat] ? e.cat : 'other',
+      appId: String(e.appId || ''), school: a ? appName(a, list, aliases) : String(e.school || ''), derived: false, createdAt: Number(e.createdAt) || 0, rev: Number(e.rev) || 0});
+  }
+  return out.sort((x, y) => y.date.localeCompare(x.date) || y.createdAt - x.createdAt || x.id.localeCompare(y.id));
+}
+// 合計、依類別（六類都有，0 的由畫面決定要不要寫）、依學校（多的在前；沒有指定學校的放最後）
+export function expenseTotals(lines = []) {
+  const byCat = Object.fromEntries(CATS.map(k => [k, 0])), by = new Map();
+  let total = 0;
+  for (const l of lines || []) {
+    const n = Number(l.amount) || 0;
+    total += n;
+    byCat[CAT_LABEL[l.cat] ? l.cat : 'other'] += n;
+    const k = l.appId || (l.school ? '~' + l.school : '');
+    if (!by.has(k)) by.set(k, {appId: l.appId || '', school: l.school || '', amount: 0});
+    by.get(k).amount += n;
+  }
+  const none = s => !s.appId && !s.school;
+  const bySchool = [...by.values()].sort((a, b) => none(a) - none(b) || b.amount - a.amount || a.school.localeCompare(b.school));
+  return {total, byCat, bySchool};
+}
+// 記一筆時預設的學校：那天前後一天內有面試／考試或郵寄的那一間（最近的；一樣近時面試優先）。
+// 繳費不算：報名費是自動的，繳費截止那天記的多半跟那間無關。一樣近、一樣是面試的有兩間（同一天面試）就不猜。
+export function guessSchool(apps = [], programs = null, date = '') {
+  if (!isKey(date)) return '';
+  const get = progIndex(programs), RANK = {go: 0, mail: 1};
+  let best = null, tie = false;
+  for (const a of apps || []) {
+    if (!a || a.status === 'skipped') continue;
+    for (const e of eventsOf(a, get(a.programId))) {
+      const hits = e.role === 'go' && !a.ivSkip ? [['go', e.date, e.end || e.date]] : [];
+      for (const pt of e.parts) if (pt.mail) hits.push(['mail', pt.date, pt.date]);
+      for (const [type, from, to] of hits) {
+        const d = date < from ? daysBetween(date, from) : date > to ? daysBetween(to, date) : 0;
+        if (d > 1) continue;
+        const score = d * 10 + RANK[type];
+        if (!best || score < best.score) { best = {score, id: a.id}; tie = false; } else if (score === best.score && best.id !== a.id) tie = true;
+      }
+    }
+  }
+  return best && !tie ? best.id : '';
 }

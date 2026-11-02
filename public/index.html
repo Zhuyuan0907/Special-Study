@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/next.css">
 <link rel="stylesheet" href="css/schools.css">
 <link rel="stylesheet" href="css/calendar.css">
+<link rel="stylesheet" href="css/money.css">
 <link rel="stylesheet" href="css/add.css">
 <link rel="stylesheet" href="css/settings.css">
 <!-- 一次把所有模組一起下載，不用等 app.js 載完才發現還要下載哪些 -->
@@ -23,6 +24,7 @@
 <link rel="modulepreload" href="js/next.js">
 <link rel="modulepreload" href="js/schools.js">
 <link rel="modulepreload" href="js/calendar.js">
+<link rel="modulepreload" href="js/money.js">
 <link rel="modulepreload" href="js/add.js">
 <link rel="modulepreload" href="js/settings.js">
 <!-- 配色：預設跟著系統；設定裡選了淺色／深色就記在這台電腦（?theme= 給測試用） -->
@@ -36,6 +38,7 @@
     <a href="#next" data-view="next">接下來</a>
     <a href="#schools" data-view="schools">學校</a>
     <a href="#calendar" data-view="calendar">行事曆</a>
+    <a href="#money" data-view="money">花費</a>
   </nav>
   <div class="nav-actions">
     <button class="btn quiet" type="button" id="btn-settings">設定</button>
@@ -47,6 +50,7 @@
   <section class="view" id="view-next" aria-label="接下來" hidden></section>
   <section class="view" id="view-schools" aria-label="學校" hidden></section>
   <section class="view" id="view-calendar" aria-label="行事曆" hidden></section>
+  <section class="view" id="view-money" aria-label="花費" hidden></section>
 </main>
 
 <dialog id="dlg-add" class="modal wide" aria-labelledby="add-title">

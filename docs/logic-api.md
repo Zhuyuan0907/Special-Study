@@ -162,6 +162,20 @@ Row = {key, appId, date, time, sortKey, type, role, kind, label, parts:[Part], r
 | `editRecord` | `{regNo?, ivTime?, place?, asked?, notes?, prep?}` | 紀錄. `notes` replaces only the user part |
 | `setColor` | `{color}` | ⋯ › 顏色 |
 | `editInfo` | `{school?, dept?, url?, fee?}` | manual apps |
+| `setFee` | `{fee?, hidden?}` | 花費: edit the derived 報名費 line (`fee` → `app.fee` via `parseAmount`; an unreadable value leaves it alone) and 沒繳／改回 (`hidden` → `app.feeHidden`, removed when false) |
+
+## 花費 (expenses, DESIGN §12)
+
+Top-level `records.expenses`: `[{id, date, amount, what, cat, appId, school, rev, createdAt}]`. `amount` is whole NT$ 0–1,000,000, `what` at most 60 characters (blank becomes the category label, e.g. 其他), `cat` one of `CATS`, `appId` '' or an app id, `school` the short name at creation (so a deleted school's entries still read well). 報名費 is never stored as an entry: it is derived from the apps.
+
+- `CATS` `['reg','travel','stay','mail','print','other']`, `CAT_LABEL` 報名費 · 交通 · 住宿 · 郵寄 · 影印・證件 · 其他, `AMOUNT_MAX` 1,000,000, `WHAT_MAX` 60.
+- `guessCat(what)` → the category for 項目 keywords (高鐵/台鐵/客運/計程車/捷運/機票/油錢… → travel, 住宿/飯店/旅館 → stay, 郵/掛號/快遞 → mail, 影印/列印/照片/證件 → print, 報名費 → reg, else other). Travel is checked before mail (「計程車去郵局」 is travel).
+- `guessSchool(apps, programs, date)` → the app id whose interview/exam or mailing (postmark/arrival part) date is nearest to `date` within one day; at equal distance go beats mail; 繳費 deadlines don't count (報名費 is derived, and what is spent on a 繳費 day is rarely about that school); two different apps tied at the same distance and kind (two interviews that day) → `''`. Skipped apps and ivSkip go rows don't count.
+- `parseAmount(v)` → integer or `null` (「1,490」「1490 元」「NT$1490」 and full-width digits read; empty, negative, fractional or > 1,000,000 → `null`).
+- `checkExpense(e)` → `{entry}` with only the known fields (missing `cat` is guessed from `what`; a blank `what` becomes `CAT_LABEL[cat]`, so the line can still be edited in the form, which requires 項目), or `{error}`. The server uses it for `PUT` (400) and import (invalid entries skipped).
+- `feeLine(app, program)` → the derived 報名費 line or `null`: statuses applied, interview, waiting, admitted, waitlist, rejected, out — or prep with the 繳費 part (regStep key `pay`) ticked. Skipped apps, prep apps without a ticked 繳費 and `app.feeHidden` give `null`. `amount` = `app.fee`; when the fee is unknown the line has `amount: 0, unknown: true`. Date = the first 繳費 part's deadline, else the 報名 part's, else the day of `app.updatedAt`.
+- `expenseLines(apps, expenses, programs, {aliases})` → `[{id, date, amount, what, cat, appId, school, derived, createdAt, rev?, unknown?}]`, newest first (date desc, then `createdAt` desc). Derived lines have `id: 'fee:<appId>'`, `what: '報名費'`, `cat: 'reg'`. `school` is the app's current `appName`, or the stored snapshot when the app is gone (its derived line disappears with it). Malformed entries don't throw.
+- `expenseTotals(lines)` → `{total, byCat: {reg…other} (all six keys), bySchool: [{appId, school, amount}]}`; `bySchool` is sorted by amount desc with the no-school group (`appId:'' , school:''`, shown as 沒有指定學校) last.
 
 ## New apps
 
@@ -183,5 +197,7 @@ The server runs these at startup: it migrates per app and syncs (only when the h
 
 - Every write needs the header `X-Client: 3`. Without it the server answers `409 {error:'網頁已更新，請重新整理'}` with no `app`.
 - `PUT /api/apps/:id` takes the whole app including `rev`. On a stale `rev` it answers `409 {error, app: current}`. A PUT for an id the server no longer has, with `rev > 0`, answers `410` (deleted elsewhere; the client drops it). On success it answers `200` with the saved app and the new `rev`. `dates`/`docs`/`regSteps` are cleaned to arrays of objects and `hidden` to strings. Write failures answer `500` and undo the in-memory change, so a retry with the same body and `rev` is accepted once.
-- `POST /api/import?dry=1` → `{apps, replace}` (for 「會取代 N 間學校」). Without `dry`, it migrates and syncs every app on a copy (one unreadable app → `400`, nothing imported), backs up, merges, logs sync changes in `syncLog`, then returns `{imported, replaced}`.
+- `PUT /api/expenses/:id` takes the whole entry including `rev` (same rules as apps: stale `rev` → `409 {error, expense: current}`, unknown id with `rev > 0` → `410`, invalid entry → `400 {error}`, write failure → `500` with the in-memory change undone). Unknown fields are dropped; an empty `school` is filled from the app. `DELETE /api/expenses/:id` → `204` (`404` when there is none). `GET /api/expenses.csv` → BOM + `日期,項目,類別,學校,金額`, derived 報名費 included, oldest first, amounts without separators.
+- `POST /api/import?dry=1` → `{apps, replace, expenses}` (for 「會取代 N 間學校」). Without `dry`, it migrates and syncs every app on a copy (one unreadable app → `400`, nothing imported), merges `expenses` by id (invalid entries skipped, `rev` bumped past the server's), backs up, merges, logs sync changes in `syncLog`, then returns `{imported, replaced, expenses}`.
+- `expenses` is kept as-is by the startup migration and sync; a file without it (v2, or v3 before 花費) loads as `[]` and is not rewritten for that. Backups and `/api/export` carry it. Google Sheets sync posts it as `extra: [{sheet:'花費', headers, rows}]` (the Apps Script in 設定 writes it as a second sheet; older scripts ignore it).
 - Requests whose `Host` is not an IP literal, `localhost`/`*.localhost`, this machine's hostname (or `.local`), or a name in `ALLOWED_HOSTS` get `403` (DNS rebinding).

@@ -1,5 +1,5 @@
 // 共用：時間、狀態、載入、儲存、提示、小工具。各畫面都從這裡 import。
-// 寫入一律走 mutate() / addApp() / removeApp() / saveProfile() / saveTodos()：
+// 寫入一律走 mutate() / addApp() / removeApp() / saveExpense() / deleteExpense() / saveProfile() / saveTodos()：
 // 先改畫面上的那一份，再送到伺服器；伺服器說版本不對（409）就拿它的版本把同一個改動重做一次；
 // 存不進去（500、斷線）就留著重試，畫面上掛一條「沒有存到，重試中…」。
 import * as L from './logic.js';
@@ -45,7 +45,7 @@ export const today = () => now().slice(0, 10);
 
 /* ---------- 狀態 ---------- */
 // S：使用者的紀錄（/api/records、/api/meta）。P：簡章資料（/data/*.json），載入後不變。
-export const S = {apps: [], todos: [], profile: {}, meta: {}, syncLog: [], loaded: false};
+export const S = {apps: [], expenses: [], todos: [], profile: {}, meta: {}, syncLog: [], loaded: false};
 export const P = {loaded: false, schools: [], programs: [], byId: new Map(), fetched: '', year: null, source: '', pdf: new Set(), links: {}, aliases: {}, synonyms: {}, terms: {aliases: {}, synonyms: {}}, season: []};
 const subs = new Set();
 export const onChange = fn => { subs.add(fn); return () => subs.delete(fn); };
@@ -97,6 +97,8 @@ export const nextOf = app => L.nextStep(app, programOf(app), now(), lopts());
 export const timelineOf = app => L.timeline(app, programOf(app), now(), lopts());
 export const eventsFor = (app, opts) => L.eventsOf(app, programOf(app), lopts(opts));
 export const clashNow = () => L.clashes(S.apps, P.byId, now(), lopts());
+// 花費的每一行（自動的報名費＋自己記的），新的在上面
+export const expensesNow = () => L.expenseLines(S.apps, S.expenses, P.byId, lopts());
 export const actx = app => ({now: now(), apps: S.apps, program: programOf(app), programs: P.byId, uid});
 // 按鈕的動作：act(app.id, 'tick', {key:'pay'}, {toast:'已記下：市北 繳費'})
 export const act = (appId, actionId, payload, opts) => mutate(appId, a => L.applyAction(a, actionId, payload, actx(a)), opts);
@@ -200,9 +202,17 @@ function setFailing(key, on) {
 // 舊版網頁（沒帶 X-Client: 3）或伺服器更新過：只能重新整理。
 function stale(msg) { setBar('stale', {msg: msg || '網頁已更新，請重新整理', err: true, btn: {label: '重新整理', fn: () => location.reload()}}); }
 
-/* ---------- 改學校紀錄：mutate ---------- */
-// fn(app 的複本) 可以直接改複本，或回傳新的物件（logic.applyAction 就是回傳新的）。
-// 每間學校一個佇列：還沒被伺服器確認的 fn 都留著，409 時拿伺服器的版本依序重做。
+/* ---------- 改學校紀錄、花費：mutate ---------- */
+// 一筆一筆存的有兩種：學校（/api/apps/:id）和花費（/api/expenses/:id）。佇列、409 重做、重試、刪除後 8 秒內可以復原，兩種都一樣。
+// fn(複本) 可以直接改複本，或回傳新的物件（logic.applyAction 就是回傳新的）。
+// 每一筆一個佇列：還沒被伺服器確認的 fn 都留著，409 時拿伺服器的版本依序重做。
+const KIND = {
+  app: {list: () => S.apps, url: id => `/api/apps/${encodeURIComponent(id)}`, field: 'app', name: a => shortName(a)},
+  exp: {list: () => S.expenses, url: id => `/api/expenses/${encodeURIComponent(id)}`, field: 'expense', name: e => e && e.what ? `「${e.what}」` : '這筆花費'},
+};
+const qkey = (kind, id) => `${kind}:${id}`;
+const itemOf = (kind, id) => KIND[kind].list().find(x => x.id === id) || null;
+export const expenseById = id => itemOf('exp', id);
 const Q = new Map();
 const IGNORE = new Set(['rev', 'updatedAt']);
 const applyFn = (fn, app) => { const c = clone(app); const r = fn(c); return r && typeof r === 'object' ? r : c; };
@@ -211,31 +221,32 @@ function changedKeys(a, b) {
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
   return [...keys].filter(k => !IGNORE.has(k) && !sameJson(a[k], b[k]));
 }
-function putLocal(app) {
-  const i = S.apps.findIndex(a => a.id === app.id);
-  if (i >= 0) S.apps[i] = app; else S.apps.push(app);
+function putLocal(item, kind = 'app') {
+  const list = KIND[kind].list(), i = list.findIndex(a => a.id === item.id);
+  if (i >= 0) list[i] = item; else list.push(item);
 }
 export const saving = () => [...Q.values()].some(q => q.fns.length) || [...W.values()].some(w => w.busy) || pendingDelete.size > 0;
 
 export function mutate(appId, fn, opts = {}) { return mutateMany([[appId, fn]], opts); }
 // 一次改幾間（例如換到 B：A 已放棄、B 已報到），一則提示、一個復原。
-export function mutateMany(list, {toast: msg = '', undo = true, action = null, ms} = {}) {
+export const mutateMany = (list, opts) => mutateItems('app', list, opts);
+function mutateItems(kind, list, {toast: msg = '', undo = true, action = null, ms} = {}) {
   const undos = [], done = [];
   for (const [id, fn] of list) {
-    const before = appById(id);
+    const before = itemOf(kind, id);
     if (!before) continue;
     let after;
     try { after = applyFn(fn, before); } catch (e) { console.error(e); continue; }
     const keys = changedKeys(before, after);
     if (!keys.length) continue;
     after.rev = before.rev;
-    putLocal(after);
+    putLocal(after, kind);
     const prev = clone(before);
     undos.push([id, cur => { for (const k of keys) { if (prev[k] === undefined) delete cur[k]; else cur[k] = clone(prev[k]); } }]);
-    done.push(enqueue(id, fn));
+    done.push(enqueue(kind, id, fn));
   }
   if (done.length) rerender();
-  if (msg) toast(msg, undo && undos.length ? {undo: () => { mutateMany(undos); }, ms} : {action, ms});
+  if (msg) toast(msg, undo && undos.length ? {undo: () => { mutateItems(kind, undos); }, ms} : {action, ms});
   return Promise.all(done);
 }
 // 新增一間（加學校）。app 要有 id；回傳存好時 resolve 的 promise。
@@ -246,123 +257,148 @@ export function addApp(app, {toast: msg = '', action = null} = {}) {
   putLocal(clone(app));
   rerender();
   if (msg) toast(msg, {action});
-  return enqueue(app.id, a => a);
+  return enqueue('app', app.id, a => a);
 }
+// 花費：新的一筆或改一筆（只送 entry 裡的欄位；409 時套在伺服器的版本上）。新的那筆的「復原」是直接刪掉。
+export function saveExpense(entry, {toast: msg = '', undo = true} = {}) {
+  if (!entry.id) entry.id = uid();
+  const {id, rev, createdAt, ...patch} = entry;
+  if (itemOf('exp', id)) return mutateItems('exp', [[id, e => Object.assign(e, clone(patch))]], {toast: msg, undo});
+  putLocal({...clone(entry), rev: 0, createdAt: createdAt || Date.now()}, 'exp');
+  rerender();
+  if (msg) toast(msg, undo ? {undo: () => removeItem('exp', id, {immediate: true})} : {});
+  return enqueue('exp', id, e => e);
+}
+// 刪一筆花費：和刪學校一樣，8 秒內可以復原
+export const deleteExpense = (id, opts) => removeItem('exp', id, opts);
 
-function enqueue(id, fn) {
-  let q = Q.get(id);
-  if (!q) Q.set(id, q = {fns: [], busy: null});
+function enqueue(kind, id, fn) {
+  const key = qkey(kind, id);
+  let q = Q.get(key);
+  if (!q) Q.set(key, q = {fns: [], busy: null});
   q.fns.push(fn);
-  if (!q.busy) q.busy = flush(id, q).finally(() => { q.busy = null; });
+  if (!q.busy) q.busy = flush(kind, id, q).finally(() => { q.busy = null; });
   return q.busy;
 }
-async function flush(id, q) {
+async function flush(kind, id, q) {
+  const K = KIND[kind], key = qkey(kind, id);
   let tries = 0, conflicts = 0;
   while (q.fns.length) {
-    if (pendingDelete.has(id)) return;           // 刪除後 8 秒內：先不送，復原時再送
-    const app = appById(id);
-    if (!app) { q.fns = []; break; }
+    // 刪除後 8 秒內：先不送，復原時再送。「重試中」也要收掉，不然刪掉之後還一直顯示
+    if (pendingDelete.has(key)) { setFailing(key, false); return; }
+    const item = itemOf(kind, id);
+    if (!item) { q.fns = []; break; }
     const sent = q.fns.length;
     let res;
-    try { res = {ok: true, data: await request('PUT', `/api/apps/${encodeURIComponent(id)}`, app)}; }
+    try { res = {ok: true, data: await request('PUT', K.url(id), item)}; }
     catch (e) { res = {ok: false, status: e.status, data: e.data, msg: e.message}; }
     if (res.ok) {
       tries = 0; conflicts = 0;
       q.fns.splice(0, sent);
-      setFailing('app:' + id, false);
-      const saved = res.data && typeof res.data === 'object' ? (res.data.app || res.data) : null;
-      const cur = appById(id);
+      setFailing(key, false);
+      const saved = res.data && typeof res.data === 'object' ? (res.data[K.field] || res.data) : null;
+      const cur = itemOf(kind, id);
       if (cur && saved && saved.rev != null) cur.rev = saved.rev;
       // 沒有新的改動在排隊：改用伺服器的版本（伺服器會補回它保管的欄位）
-      if (cur && saved && saved.id === id && !q.fns.length && !pendingDelete.has(id)) {
+      if (cur && saved && saved.id === id && !q.fns.length && !pendingDelete.has(key)) {
         const differs = changedKeys(cur, saved).length > 0;
-        putLocal(saved);
+        putLocal(saved, kind);
         if (differs) rerender();
       }
       continue;
     }
-    const cur = res.data && typeof res.data === 'object' ? (res.data.app || (res.data.id === id ? res.data : null)) : null;
+    const cur = res.data && typeof res.data === 'object' ? (res.data[K.field] || (res.data.id === id ? res.data : null)) : null;
     if (res.status === 409 && cur) {
       // 別的分頁或手機先改過：用伺服器的版本重做一次還沒確認的改動
       if (++conflicts > 3) {
-        putLocal(cur); q.fns = []; rerender();
+        putLocal(cur, kind); q.fns = []; rerender();
         // 先清掉「重試中」再顯示訊息；不然迴圈後面的 setFailing 會把這個訊息也清掉
-        setFailing('app:' + id, false);
-        setBar('save', {msg: `${shortName(cur)} 的改動沒有存到，已換成最新的資料`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
+        setFailing(key, false);
+        setBar('save', {msg: `${K.name(cur)} 的改動沒有存到，已換成最新的資料`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
         return;
       }
       let base = cur;
       for (const f of q.fns) { try { base = applyFn(f, base); } catch (e) { console.error(e); } }
       base.rev = cur.rev;
-      putLocal(base);
+      putLocal(base, kind);
       rerender();
       continue;
     }
     if (res.status === 409) { q.fns = []; stale(res.msg); break; }
-    // 4xx（例如 410：別的分頁或裝置已經刪掉這間）：不再重試，重新載入（刪掉的就從畫面上拿掉），留著訊息
+    // 4xx（例如 410：別的分頁或裝置已經刪掉這筆）：不再重試，重新載入（刪掉的就從畫面上拿掉），留著訊息
     if (res.status >= 400 && res.status < 500) {
       q.fns = [];
-      setFailing('app:' + id, false);
+      setFailing(key, false);
       setBar('save', {msg: `沒有存到：${res.msg}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
       refresh({force: true});
       return;
     }
-    setFailing('app:' + id, true);
+    setFailing(key, true);
     await nap(backoff(tries++));
   }
-  setFailing('app:' + id, false);
+  setFailing(key, false);
 }
 
 /* ---------- 刪除：8 秒內可以復原 ---------- */
+// key 是 'app:<id>' 或 'exp:<id>'
 const pendingDelete = new Map();
+const isPendingDelete = (kind, id) => pendingDelete.has(qkey(kind, id));
 export function removeApp(id, {toast: msg} = {}) {
-  const i = S.apps.findIndex(a => a.id === id);
+  const app = appById(id);
+  if (app) removeItem('app', id, {toast: msg || `已刪除 ${shortName(app)}`});
+}
+// immediate：不等 8 秒、沒有提示（剛記下的花費按「復原」）
+function removeItem(kind, id, {toast: msg = '', immediate = false} = {}) {
+  const list = KIND[kind].list(), i = list.findIndex(a => a.id === id), key = qkey(kind, id);
   if (i < 0) return;
-  const app = S.apps[i];
-  const name = shortName(app);
-  S.apps.splice(i, 1);
+  const item = list[i];
+  list.splice(i, 1);
+  if (immediate) { pendingDelete.set(key, {kind, id, item, index: i, timer: 0}); rerender(); commitDelete(key); return; }
   const undo = () => {
-    const p = pendingDelete.get(id);
+    const p = pendingDelete.get(key);
     if (!p) return;
     clearTimeout(p.timer);
-    pendingDelete.delete(id);
-    S.apps.splice(Math.min(p.index, S.apps.length), 0, p.app);
+    pendingDelete.delete(key);
+    const cur = KIND[kind].list();     // 重新載入過的話已經是另一個陣列
+    cur.splice(Math.min(p.index, cur.length), 0, p.item);
     rerender();
-    const q = Q.get(id);
-    if (q && q.fns.length && !q.busy) q.busy = flush(id, q).finally(() => { q.busy = null; });
+    const q = Q.get(key);
+    if (q && q.fns.length && !q.busy) q.busy = flush(kind, id, q).finally(() => { q.busy = null; });
   };
   // 8 秒後才送出；提示還在（滑鼠停在上面）就再等，「復原」按得到的時候一定有用
   const later = ms => setTimeout(() => {
-    const p = pendingDelete.get(id);
+    const p = pendingDelete.get(key);
     if (p && toastUndo === undo) p.timer = later(500);
-    else if (p) commitDelete(id);
+    else if (p) commitDelete(key);
   }, ms);
-  pendingDelete.set(id, {app, index: i, timer: later(8000)});
+  pendingDelete.set(key, {kind, id, item, index: i, timer: later(8000)});
   rerender();
-  toast(msg || `已刪除 ${name}`, {ms: 8000, undo});
+  toast(msg || '已刪除', {ms: 8000, undo});
 }
-async function commitDelete(id) {
-  const p = pendingDelete.get(id);
+async function commitDelete(key) {
+  const p = pendingDelete.get(key);
   if (!p) return;
-  const q = Q.get(id);
+  const q = Q.get(key);
+  // 還在送的那一次（剛新增的 PUT）先等它回來，DELETE 才不會比它早到、被它加回去
+  if (q && q.busy) { wakeRetries(); await q.busy.catch(() => {}); }
   if (q) q.fns = [];
   let tries = 0;
   for (;;) {
-    try { await request('DELETE', `/api/apps/${encodeURIComponent(id)}`); break; }
+    try { await request('DELETE', KIND[p.kind].url(p.id)); break; }
     catch (e) {
       if (e.status === 404) break;
       if (e.status === 409) { stale(e.message); break; }
       if (e.status >= 400 && e.status < 500) { setBar('save', {msg: `沒有刪除：${e.message}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}}); break; }
-      setFailing('del:' + id, true);
+      setFailing('del:' + key, true);
       await nap(backoff(tries++));
     }
   }
-  setFailing('del:' + id, false);
-  pendingDelete.delete(id);
+  setFailing('del:' + key, false);
+  pendingDelete.delete(key);
 }
 // 關掉網頁時，還在復原時間內的刪除直接送出。
 addEventListener('pagehide', () => {
-  for (const id of pendingDelete.keys()) { try { fetch(`/api/apps/${encodeURIComponent(id)}`, {method: 'DELETE', keepalive: true, headers: {'X-Client': '3'}}); } catch { /* ignore */ } }
+  for (const p of pendingDelete.values()) { try { fetch(KIND[p.kind].url(p.id), {method: 'DELETE', keepalive: true, headers: {'X-Client': '3'}}); } catch { /* ignore */ } }
 });
 // 還有沒存到的改動就先提醒，不要直接關掉。
 addEventListener('beforeunload', e => { if ([...Q.values()].some(q => q.fns.length)) { e.preventDefault(); e.returnValue = ''; } });
@@ -405,22 +441,27 @@ export function saveTodos() {
 
 /* ---------- 載入 ---------- */
 const byCreated = (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
-function applyRecords(d) {
-  const server = Array.isArray(d && d.apps) ? d.apps : [];
-  const local = new Map(S.apps.map(a => [a.id, a]));
-  const queued = id => { const q = Q.get(id); return !!(q && q.fns.length); };
-  const apps = [];
+// 伺服器的清單，加上自己還沒存好的：排隊中的用自己這份，復原時間內刪掉的不要被帶回來，剛加、還沒存好的留著
+function mergeList(kind, server) {
+  const mine = KIND[kind].list(), local = new Map(mine.map(a => [a.id, a]));
+  const queued = id => { const q = Q.get(qkey(kind, id)); return !!(q && q.fns.length); };
+  const out = [];
   for (const a of server) {
-    if (pendingDelete.has(a.id)) continue;               // 復原時間內的刪除不要被重新載入帶回來
-    apps.push(queued(a.id) && local.has(a.id) ? local.get(a.id) : a);
+    if (!a || isPendingDelete(kind, a.id)) continue;
+    out.push(queued(a.id) && local.has(a.id) ? local.get(a.id) : a);
   }
-  for (const a of S.apps) if (queued(a.id) && !server.some(x => x.id === a.id)) apps.push(a);   // 剛加、還沒存好的
-  apps.sort(byCreated);
+  for (const a of mine) if (queued(a.id) && !server.some(x => x && x.id === a.id)) out.push(a);
+  return out;
+}
+function applyRecords(d) {
+  const apps = mergeList('app', Array.isArray(d && d.apps) ? d.apps : []).sort(byCreated);
+  const expenses = mergeList('exp', Array.isArray(d && d.expenses) ? d.expenses : []);
   const todos = Array.isArray(d && d.todos) ? d.todos : [];
   const profile = W.get('profile') && W.get('profile').busy ? S.profile : (d && d.profile) || {};
   const syncLog = Array.isArray(d && d.syncLog) ? d.syncLog : [];
-  const changed = !S.loaded || !sameJson(apps, S.apps) || !sameJson(todos, S.todos) || !sameJson(profile, S.profile);
+  const changed = !S.loaded || !sameJson(apps, S.apps) || !sameJson(expenses, S.expenses) || !sameJson(todos, S.todos) || !sameJson(profile, S.profile);
   S.apps = apps;
+  S.expenses = expenses;
   if (!(W.get('todos') && W.get('todos').busy)) S.todos = todos;
   S.profile = profile;
   S.syncLog = syncLog;

@@ -45,6 +45,9 @@ export function fromText(from, fromTime, n = now()) {
   return `${/^(今天|明天|後天|週)/.test(lab) ? lab : md(from)}${fromTime ? ' ' + fromTime : ''} 起`;
 }
 
+// 金額：「3,240」（千分位；單位「元」由畫面決定要不要寫）
+export const amt = n => (Number(n) || 0).toLocaleString('en-US');
+
 /* ---------- 簡章的幾個常用字 ---------- */
 // 甄選方式：「書面審查 50%・面試 50%」
 export const methodText = p => ((p && p.it) || []).filter(i => i && i[0]).map(([n, w]) => w != null && w !== '' ? `${n} ${w}%` : n).join('・');
@@ -115,12 +118,12 @@ export function restoreEdit(s) {
   if (s.fi >= 0 && els[s.fi]) { els[s.fi].focus({preventScroll: true}); try { if (s.sel) els[s.fi].setSelectionRange(...s.sel); } catch { /* ignore */ } }
   E.focus = false;
 }
-// 剛打開的表單：游標放在第一個欄位。
+// 剛打開的表單：游標放在第一個欄位（有 data-first 的話放那裡）。
 export function afterRender() {
   if (!E.focus || !E.key) return;
   E.focus = false;
   const f = $(`[data-edit-form="${CSS.escape(E.key)}"]`);
-  const el = f && f.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea');
+  const el = f && (f.querySelector('[data-first]') || f.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea'));
   if (el) { el.focus({preventScroll: true}); if (el.select && el.type === 'text') el.select(); }
   if (f) f.scrollIntoView({block: 'nearest'});
 }
