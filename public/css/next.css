@@ -1,0 +1,126 @@
+/* 接下來（js/next.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   左：議程（日期欄 | 時間 | 學校 | 要做什麼 | 連結與按鈕），第一組今天以後的事放大（32 / 20）；右：選到那一列的細節，左邊一條細線。
+   所有規則都掛在 #view-next 底下，免得和其他畫面的 class 撞名。 */
+#view-next { display: grid; grid-template-columns: minmax(0, 1fr) 440px; grid-template-rows: minmax(0, 1fr); padding: 0 36px; }
+#view-next.is-empty { grid-template-columns: minmax(0, 1fr); }
+
+/* ---------- 左：議程 ---------- */
+#view-next .nx-list { padding: 14px 40px 32px 0; min-width: 0; }
+#view-next .nx-day { display: grid; grid-template-columns: 120px minmax(0, 1fr); column-gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+#view-next .nx-day:first-child { border-top: 0; }
+#view-next .nx-dh { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: baseline; column-gap: 6px; font-size: 13px; font-weight: 400; line-height: 30px; color: var(--ink-2); white-space: nowrap; min-width: 0; }
+#view-next .nx-dh b { font-weight: 600; color: var(--ink); }
+#view-next .nx-dh .clash { flex-basis: 100%; white-space: normal; line-height: 18px; color: var(--ink-3); }
+/* 已經過了還沒處理的：留在自己的日期，日期用強調色 */
+#view-next .nx-day.over .nx-dh, #view-next .nx-day.over .nx-dh b { color: var(--accent); }
+/* 放大的那一組：日期 32、內容 20 */
+#view-next .nx-day.focal { padding: 14px 0 22px; }
+#view-next .nx-day.focal .nx-dh { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; line-height: 18px; row-gap: 4px; }
+#view-next .nx-day.focal .nx-dh b.big { font-size: 32px; line-height: 40px; letter-spacing: .02em; }
+#view-next .nx-day.focal.today .nx-dh b.big { color: var(--accent); }
+#view-next .nx-day.focal .nx-dh .clash { flex-basis: auto; margin-top: 2px; }
+#view-next .nx-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* 一列：時間 | 學校（寬度跟著最長的簡稱）| 要做什麼 | 連結與按鈕 */
+#view-next .nx-row {
+  display: grid; grid-template-columns: 76px calc(var(--sw, 3em) + 4px) minmax(0, 1fr) auto; column-gap: 12px; align-items: start;
+  margin: 0 -8px; padding: 3px 8px; border-radius: var(--r); font-size: 15px; line-height: 24px; cursor: pointer;
+}
+#view-next .nx-row:hover { background: color-mix(in srgb, var(--tint) 60%, transparent); }
+#view-next .nx-row.tint, #view-next .nx-row.tint:hover { background: var(--tint); }
+#view-next .nx-row > * { min-width: 0; }
+#view-next .nx-row .t { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#view-next .nx-row .t.mail { font-size: 13px; white-space: normal; }
+#view-next .nx-row.over .t { color: var(--accent); }
+#view-next .nx-day.over .nx-row.over .t { color: var(--ink-2); }
+#view-next .nx-row .s { white-space: nowrap; }
+#view-next .nx-row .w { overflow-wrap: anywhere; }
+#view-next .nx-row.tent .w { color: var(--ink-3); }
+#view-next .nx-from { margin-left: 12px; font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+#view-next .nx-parts { display: inline-flex; flex-wrap: wrap; column-gap: 20px; vertical-align: top; }
+#view-next .nx-parts .own { margin-left: 6px; font-size: 13px; color: var(--ink-2); }
+#view-next .nx-parts .own.unk { color: var(--ink-3); }
+#view-next .nx-parts .optp { color: var(--ink-3); }
+#view-next .nx-parts .opt, #view-next .nx-side .opt { font-size: 13px; color: var(--ink-3); }
+#view-next .nx-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 12px; min-height: 24px; font-size: 13px; }
+#view-next .nx-acts:empty { display: none; }
+#view-next .nx-acts .btn.sm { height: 26px; }
+#view-next .nx-acts .btn.quiet { padding: 0 4px; }
+/* 按了「備取」「遞補上了」「換到」之後：在那一列底下多一行 */
+#view-next .nx-ask { grid-column: 3 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0 4px; font-size: 13px; color: var(--ink-2); line-height: 20px; cursor: default; }
+#view-next .nx-ask label { display: inline-flex; align-items: center; gap: 8px; }
+#view-next .nx-ask input { height: 28px; padding: 0 6px; font-size: 13px; }
+#view-next .nx-ask input[type="number"] { width: 5.5em; }
+#view-next .nx-ask input[type="date"] { min-width: 0; width: 10em; }
+#view-next .nx-ask .form-err { flex-basis: 100%; }
+
+/* 放大的那一列 */
+#view-next .nx-row.big { font-size: 20px; line-height: 34px; padding: 4px 8px; }
+#view-next .nx-row.big .t { color: var(--ink); font-weight: 600; }
+#view-next .nx-row.big .t.mail { font-size: 15px; font-weight: 400; }
+#view-next .nx-row.big .s { font-size: 20px; }
+#view-next .nx-row.big .nx-parts { column-gap: 28px; }
+#view-next .nx-row.big .nx-parts .own { font-size: 15px; }
+#view-next .nx-row.big .nx-parts .opt { font-size: 15px; }
+#view-next .nx-row.big .nx-acts { min-height: 34px; }
+#view-next .nx-row.big .nx-acts .btn.sm { height: 30px; }
+#view-next .nx-row.big .nx-from { font-size: 15px; }
+
+/* ---------- 右：細節 ---------- */
+#view-next .nx-side { min-width: 0; padding: 22px 0 28px 36px; border-left: 1px solid var(--line); }
+#view-next .nx-ph { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-size: 15px; line-height: 26px; padding-bottom: 10px; }
+#view-next .nx-ph .sch { font-size: 15px; }
+#view-next .nx-ph .dept { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+#view-next .nx-ph .st { margin-left: auto; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+#view-next .nx-sec { border-top: 1px solid var(--line); padding: 10px 0 14px; }
+#view-next .nx-sec h3 { display: flex; align-items: baseline; gap: 10px; font-size: 13px; font-weight: 600; line-height: 24px; color: var(--ink-2); }
+#view-next .nx-sec h3 .count { font-weight: 400; color: var(--ink-3); }
+#view-next .nx-sec h3 .edit { margin-left: auto; }
+#view-next .nx-sec h3 .pg { font-weight: 400; }
+#view-next .nx-docs { display: flex; flex-direction: column; margin-top: 4px; }
+#view-next .nx-docs .check { padding: 3px 0; line-height: 24px; }
+/* 簡章沒有列備審時的通用清單：字淡一階 */
+#view-next .nx-docs .check.ph > span { color: var(--ink-2); }
+#view-next .nx-docs .optdoc { padding: 3px 0 3px 23px; line-height: 24px; color: var(--ink-3); }
+/* 自己的紀錄（15px）與簡章（13px 灰） */
+#view-next .nx-kv { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 2px 12px; font-size: 15px; line-height: 24px; margin-top: 2px; }
+#view-next .nx-kv dt { font-size: 13px; color: var(--ink-3); }
+#view-next .nx-kv dd { overflow-wrap: anywhere; min-width: 0; }
+#view-next .nx-dl { display: grid; grid-template-columns: 3.6em minmax(0, 1fr); gap: 4px 12px; font-size: 13px; line-height: 20px; margin-top: 4px; }
+#view-next .nx-dl dt { color: var(--ink-3); white-space: nowrap; }
+#view-next .nx-dl dd { color: var(--ink-2); overflow-wrap: anywhere; min-width: 0; }
+#view-next .nx-side .fact { font-size: 13px; line-height: 20px; color: var(--ink-2); }
+#view-next .nx-side .ctx { font-size: 15px; line-height: 24px; }
+#view-next .nx-side .edit-form { margin-top: 6px; }
+#view-next .nx-side .edit-row { font-size: 13px; color: var(--ink-2); }
+#view-next .nx-open { margin-top: 8px; font-size: 13px; }
+
+/* ---------- 沒有事 ---------- */
+#view-next .nx-empty { padding: 40px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+#view-next .nx-empty .empty { font-size: 20px; line-height: 30px; color: var(--ink-2); }
+#view-next .nx-up { font-size: 15px; line-height: 24px; color: var(--ink-3); }
+#view-next .nx-up .when { color: var(--ink); }
+
+/* ---------- 視窗不夠大：單欄，細節接在清單下面 ---------- */
+@media (max-width: 1180px), (max-height: 620px) {
+  #view-next { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; padding: 0 24px 24px; }
+  #view-next .nx-list { padding: 14px 0 8px; }
+  #view-next .nx-side { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0 0; margin-top: 8px; }
+}
+/* ---------- 手機 ---------- */
+@media (max-width: 600px) {
+  #view-next { padding: 0 16px 24px; }
+  #view-next .nx-day { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+  #view-next .nx-dh { line-height: 24px; }
+  #view-next .nx-day.focal .nx-dh { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
+  #view-next .nx-day.focal .nx-dh .clash { flex-basis: 100%; }
+  #view-next .nx-row, #view-next .nx-row.big { grid-template-columns: 64px minmax(0, 1fr); row-gap: 2px; }
+  #view-next .nx-row .s { grid-column: 2; grid-row: 1; }
+  #view-next .nx-row .w { grid-column: 2; }
+  #view-next .nx-row .nx-acts { grid-column: 2; justify-content: flex-start; }
+  /* 放大的報名列：勾選框排滿整行；其他列的內容留在學校名那一欄 */
+  #view-next .nx-row.big .w:has(.nx-parts) { grid-column: 1 / -1; }
+  #view-next .nx-ask { grid-column: 1 / -1; }
+  #view-next .nx-row.big .nx-parts { column-gap: 20px; }
+  #view-next .nx-from { display: block; margin-left: 0; }
+}

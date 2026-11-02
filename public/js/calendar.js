@@ -1,125 +1,149 @@
-// 行事曆：整個月，每一天直接列出事情（學校簡稱・哪件事・時間）。同一天多校相同的截止合成一列。
-import {S, KINDS, DEADLINE_KINDS, esc, uid, todayKey, isKey, md, wdShort, liveEvents, saveTodos, deptMain, appName, fmtDate, seasonItems} from './core.js';
-import {hueStyle, shortName, monthTitle} from './ui.js';
+// 行事曆（#calendar、#calendar/2026-11）：週一到週日的月曆，畫的就是「接下來」那些列（同一套關聯和合併），
+// 再加上大考日期（設定裡可以關）。格子放不下就量出來，多的收成「＋N」，點了跳到接下來的那一天。點事情打開那間學校。
+import {$, $$, esc, now, today, agendaNow, appById, shortName, seasonItems, eventsFor} from './core.js';
+import {hue, icon} from './ui.js';
 import {go} from './router.js';
+import * as settings from './settings.js';
+import * as L from './logic.js';
 
-const t0 = new Date();
-export const cal = {y: t0.getFullYear(), m: t0.getMonth(), pop: null};
-const $ = s => document.querySelector(s);
+const WD = ['一', '二', '三', '四', '五', '六', '日'];
 const pad = n => String(n).padStart(2, '0');
-
-function dayItems() {
-  const byDay = {};
-  for (const ev of liveEvents()) {
-    (byDay[ev.date] ||= []).push({ev});
-    if (ev.end && ev.end !== ev.date) {
-      // 期間：最後一天標「結束」；只有甄試期間這種每天都要到場的，中間每天也標。
-      if (ev.kind === 'window') { let d = ev.date; for (let i = 0; i < 60 && d < ev.end; i++) { d = nextDay(d); (byDay[d] ||= []).push({ev, mid: d !== ev.end, end: d === ev.end}); } }
-      else (byDay[ev.end] ||= []).push({ev, end: true});
-    }
-  }
-  for (const td of S.todos) if (isKey(td.due)) (byDay[td.due] ||= []).push({todo: td});
-  for (const s of seasonItems()) for (let d = s.date, i = 0; d <= s.last && i < 10; d = nextDay(d), i++) (byDay[d] ||= []).push({season: s});
-  // 同一天、同一種截止、三間以上學校 → 合成一列
-  for (const k of Object.keys(byDay)) {
-    const list = byDay[k], out = [], groups = {};
-    for (const it of list) {
-      if (it.ev && DEADLINE_KINDS.has(it.ev.kind) && !it.mid && !it.end) (groups[it.ev.kind] ||= []).push(it); else out.push(it);
-    }
-    for (const [kind, its] of Object.entries(groups)) {
-      if (its.length >= 3) out.push({multi: true, kind, items: its});
-      else out.push(...its);
-    }
-    byDay[k] = out.sort((a, b) => timeOf(a).localeCompare(timeOf(b)));
-  }
-  return byDay;
+const thisMonth = () => today().slice(0, 7);
+// 網址的月份不對（#calendar/2027-13）就回到這個月
+const monthOf = route => /^\d{4}-(0[1-9]|1[0-2])$/.test(route && route.month || '') ? route.month : thisMonth();
+function shift(m, n) {
+  const y = +m.slice(0, 4), mo = +m.slice(5, 7) - 1 + n;
+  const d = new Date(Date.UTC(y, mo, 1));
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
 }
-const timeOf = it => it.todo ? '98' : it.season ? '97' : it.multi ? (it.items[0].ev.time || '99') : (it.ev.time || '99');
-function nextDay(k) { const d = new Date(k + 'T00:00:00'); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-
-function itemHtml(it, full = false) {
-  if (it.todo) return `<div class="citem todo ${it.todo.done ? 'done' : ''}" data-todo="${esc(it.todo.id)}"><span class="dot" style="background:var(--ink-3)"></span><span class="k">${esc(it.todo.text)}</span></div>`;
-  if (it.season) return `<div class="citem season"><span class="dot" style="background:var(--ink-3)"></span><span class="k">${esc(it.season.label)}</span></div>`;
-  if (it.multi) return `<div class="citem multi" data-multi="${esc(it.kind)}"><span class="dot" style="background:var(--ink-2)"></span><span class="s">${it.items.length} 校</span><span class="k">${KINDS[it.kind].label}</span></div>`;
-  const ev = it.ev;
-  return `<div class="citem" ${hueStyle(ev.app)} data-app="${esc(ev.app.id)}"><span class="dot"></span><span class="s">${esc(shortName(ev.app))}</span><span class="k">${full ? esc(deptMain(ev.app)) + ' ' : ''}${KINDS[ev.kind].label}${it.end ? '結束' : it.mid ? '中' : ''}</span>${ev.time && !it.mid && !it.end ? `<span class="t">${esc(ev.time)}</span>` : ''}</div>`;
+// 這個月要畫的格子：從包含 1 號那週的週一，到包含月底那週的週日（4–6 週）
+function cells(m) {
+  const first = m + '-01';
+  const lead = (new Date(first + 'T00:00:00Z').getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate();
+  const n = Math.ceil((lead + days) / 7) * 7;
+  const start = L.addDays(first, -lead);
+  return Array.from({length: n}, (_, i) => L.addDays(start, i));
 }
 
-export function renderCalendar() {
-  const {y, m} = cal, t = todayKey();
-  $('#cal-title').textContent = monthTitle(y, m);
-  const byDay = dayItems();
-  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
-  const lead = (first.getDay() + 6) % 7; // 週一開始
-  const cells = [];
-  const prevDays = new Date(y, m, 0).getDate();
-  for (let i = lead - 1; i >= 0; i--) cells.push({k: `${y}-${pad(m)}-${pad(prevDays - i)}`, pad: true, n: prevDays - i});
-  for (let d = 1; d <= days; d++) cells.push({k: `${y}-${pad(m + 1)}-${pad(d)}`, n: d});
-  while (cells.length % 7) { const i = cells.length - lead - days + 1; cells.push({k: `${y}-${pad(m + 2)}-${pad(i)}`, pad: true, n: i}); }
-  const rows = cells.length / 7;
-  const maxLines = rows >= 6 ? 4 : 5;
-  const grid = $('#cal-grid');
-  grid.style.gridTemplateRows = `auto repeat(${rows}, minmax(0, 1fr))`;
-  grid.innerHTML = '一二三四五六日'.split('').map(c => `<div class="cal-wd">週${c}</div>`).join('') + cells.map(c => {
-    const items = byDay[c.k] || [];
-    const shown = items.slice(0, maxLines);
-    return `<div class="cday ${c.pad ? 'pad' : ''} ${c.k === t ? 'today' : ''} ${c.k < t ? 'past' : ''}" data-day="${c.k}">
-      <div class="cday-n"><span>${c.n}${c.k === t ? ' 今天' : ''}</span><button class="add" type="button" data-add-day="${c.k}" aria-label="加待辦" title="加待辦">＋</button></div>
-      <div class="cday-items">${shown.map(it => itemHtml(it)).join('')}${items.length > shown.length ? `<div class="citem" data-more="${c.k}"><span class="k muted">還有 ${items.length - shown.length} 項…</span></div>` : ''}</div>
+/* ---------- 每一天的事情 ---------- */
+// 格子裡寫得短一點：報名列只寫還沒勾的必繳部分（已勾的、選繳的在接下來看）；報到、放棄只寫事情本身。
+function labelOf(r) {
+  if (r.role === 'reg') {
+    const open = r.parts.filter(p => !p.opt && !p.done);
+    return (open.length ? open : r.parts).map(p => p.name).join('・');
+  }
+  if (r.role === 'confirm') return '報到';
+  if (r.role === 'giveup') return '放棄期限';
+  return r.label;
+}
+// 格子已經是那一天，所以郵戳類只寫「郵戳」「寄達」，不再重複日期
+const timeOf = r => r.time || (r.mail === 'postmark' ? '郵戳' : r.mail === 'arrive' ? '寄達' : '');
+// 好幾天的面試（甄試期間）：只在第一天畫，後面接「～12/06」
+function goEnd(r) {
+  const app = appById(r.appId);
+  if (!app || r.type !== 'go') return '';
+  const ends = eventsFor(app).filter(e => r.rowIds.includes(e.rowId) && e.end).map(e => e.end).sort();
+  return ends.length ? ends[ends.length - 1] : '';
+}
+function dayItems(from, to) {
+  const ag = agendaNow();
+  const by = new Map();
+  const add = (d, it) => { if (d >= from && d <= to) (by.get(d) || by.set(d, []).get(d)).push(it); };
+  // 大考日期是整天的事，照「沒有時間的排在那天最前面」放在前面
+  for (const s of seasonItems()) for (let d = s.date, i = 0; d <= (s.end || s.date) && i < 14; d = L.addDays(d, 1), i++) add(d, {season: s});
+  for (const r of ag.rows) add(r.date, {row: r});
+  return {by, clashes: ag.clashes || new Map()};
+}
+
+// 換行只在「・」後面或詞和詞之間（繳費不會拆成「繳／費」）；真的太窄才隨便斷。
+function itemHtml(it) {
+  if (it.season) return `<div class="ci season"><span class="ci-l">${esc(it.season.label)}${it.season.tentative ? '（暫定）' : ''}</span></div>`;
+  const r = it.row, app = appById(r.appId);
+  if (!app) return '';
+  const t = timeOf(r), end = goEnd(r);
+  const cls = ['ci', r.type, r.tentative ? 'tent' : '', r.overdue ? 'late' : ''].filter(Boolean).join(' ');
+  return `<a class="${cls}" href="#schools/${esc(encodeURIComponent(app.id))}" style="${hue(app)}">${t ? `<span class="ci-t">${esc(t)}</span> ` : ''}<span class="sch">${esc(shortName(app))}</span> <span class="ci-l">${esc(labelOf(r)).replace(/・/g, '・<wbr>')}${end ? `～${esc(L.md(end))}` : ''}</span></a>`;
+}
+
+/* ---------- 畫 ---------- */
+let shown = '';
+export function render(route) {
+  const root = $('#view-calendar');
+  if (!root) return;
+  const m = monthOf(route), t = today(), n = now();
+  const list = cells(m), {by, clashes} = dayItems(list[0], list[list.length - 1]);
+  const inMonth = d => d.slice(0, 7) === m;
+  let any = false;
+  const grid = list.map(d => {
+    const items = by.get(d) || [];
+    if (items.length && inMonth(d)) any = true;
+    const cls = ['cd', inMonth(d) ? '' : 'out', d < t ? 'past' : '', d === t ? 'today' : '', items.length ? '' : 'none'].filter(Boolean).join(' ');
+    const num = inMonth(d) ? String(+d.slice(8)) : `${+d.slice(5, 7)}/${+d.slice(8)}`;
+    return `<div class="${cls}" data-date="${d}">
+      <div class="cd-h"><span class="cd-n">${num}</span>${d === t ? '<span class="cd-today">今天</span>' : ''}<span class="cd-w">${esc(L.dayLabel(d, n))}</span>${clashes.has(d) ? '<span class="cd-x">同天</span>' : ''}</div>
+      <div class="cd-i">${items.map(itemHtml).join('')}<button class="link cd-more" type="button" data-more="${d}" hidden></button></div>
     </div>`;
   }).join('');
-  const legend = S.apps.filter(a => !['rejected', 'out', 'skipped'].includes(a.status)).map(a => `<span ${hueStyle(a)}><span class="dot"></span>${esc(shortName(a))} ${esc(deptMain(a))}</span>`).join('');
-  $('#cal-legend').innerHTML = legend;
-  const total = Object.values(byDay).flat().length;
-  $('#cal-note').textContent = total ? '點一天的「＋」可以加待辦；點事情會打開那間學校' : '';
-  $('#cal-tools').innerHTML = `<button class="btn sm ghost" type="button" data-settings="export">訂閱到手機・匯出</button><button class="btn sm ghost" type="button" id="cal-print">列印</button>`;
+  root.innerHTML = `<div class="cal">
+    <div class="cal-h">
+      <h1>${+m.slice(0, 4)} 年 ${+m.slice(5, 7)} 月</h1>
+      <div class="cal-nav">
+        <button class="icon-btn" type="button" data-month="${shift(m, -1)}" aria-label="上個月">${icon('left')}</button>
+        <button class="icon-btn" type="button" data-month="${shift(m, 1)}" aria-label="下個月">${icon('chevron')}</button>
+        <button class="btn sm" type="button" data-month="">今天</button>
+      </div>
+      <button class="btn quiet sm cal-sub" type="button" data-subscribe>訂閱</button>
+    </div>
+    <div class="cal-wd" aria-hidden="true">${WD.map(w => `<span>${w}</span>`).join('')}</div>
+    <div class="cal-g" style="--weeks:${list.length / 7}">${grid}</div>
+    ${any ? '' : '<p class="empty cal-empty">這個月沒有事情。</p>'}
+  </div>`;
+  shown = m;
+  fit();
 }
-function openPop(k, anchor) {
-  const pop = $('#daypop');
-  const items = (dayItems()[k] || []);
-  pop.innerHTML = `<h3><span>${md(k)}（${wdShort(k)}）</span><button class="icon-btn" type="button" data-pop-close aria-label="關閉">✕</button></h3>
-    ${items.length ? items.map(it => itemHtml(it, true)).join('') : '<div class="small muted">這天沒有事情</div>'}
-    <form class="todo-add" data-pop-add="${k}" style="padding-top:4px"><input type="text" placeholder="加一筆待辦" aria-label="待辦內容" autocomplete="off" style="flex:1"><button class="btn sm" type="submit">加入</button></form>`;
-  const r = anchor.getBoundingClientRect();
-  const left = Math.min(r.left, window.innerWidth - 376), top = r.bottom + 6 > window.innerHeight - 420 ? Math.max(8, r.top - 426) : r.bottom + 6;
-  pop.style.left = `${Math.max(8, left)}px`; pop.style.top = `${top}px`;
-  pop.classList.add('open');
-  cal.pop = k;
-  pop.querySelector('input').focus();
-}
-export function closePop() { $('#daypop').classList.remove('open'); cal.pop = null; }
 
-export function wireCalendar() {
-  const view = $('#view-calendar');
-  const move = n => { const d = new Date(cal.y, cal.m + n, 1); cal.y = d.getFullYear(); cal.m = d.getMonth(); closePop(); renderCalendar(); };
-  $('#cal-prev').addEventListener('click', () => move(-1));
-  $('#cal-next').addEventListener('click', () => move(1));
-  $('#cal-today').addEventListener('click', () => { const d = new Date(); cal.y = d.getFullYear(); cal.m = d.getMonth(); closePop(); renderCalendar(); });
-  view.addEventListener('click', e => {
-    if (e.target.closest('[data-pop-close]')) { closePop(); return; }
-    if (e.target.closest('#daypop')) { const a = e.target.closest('[data-app]'); if (a) { closePop(); go('schools', {id: a.dataset.app}); } return; }
-    const add = e.target.closest('[data-add-day]');
-    if (add) { openPop(add.dataset.addDay, add.closest('.cday')); return; }
+// 量格子：放不下的從最後一件開始收起來，換成「＋N」。只在格子固定高度時有作用（窄螢幕整頁捲動，格子會長高）。
+function fit() {
+  const g = $('#view-calendar .cal-g');
+  if (!g || !g.clientHeight) return;
+  for (const box of $$('.cd-i', g)) {
+    const items = $$('.ci', box), more = box.querySelector('.cd-more');
+    for (const it of items) it.hidden = false;
+    more.hidden = true;
+    if (box.scrollHeight <= box.clientHeight + 1) continue;
+    more.hidden = false;
+    let n = 0;
+    for (let i = items.length - 1; i >= 0; i--) {
+      items[i].hidden = true; n++;
+      more.textContent = `＋${n}`;
+      more.setAttribute('aria-label', `還有 ${n} 件，到接下來看`);
+      if (box.scrollHeight <= box.clientHeight + 1) break;
+    }
+  }
+}
+
+/* ---------- 跳到接下來的那一天 ---------- */
+// 約定：document 上的 'next:date' 事件，detail.date = 'YYYY-MM-DD'。接下來（next.js）收到就選那天的第一列、捲到中間。
+// go() 會同步畫好接下來，所以事件送出時那些列已經在了。
+export function showInNext(date) {
+  go({view: 'next'});
+  document.dispatchEvent(new CustomEvent('next:date', {detail: {date}, cancelable: true}));
+}
+
+export function init() {
+  const root = $('#view-calendar');
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-month]');
+    if (b) { const m = b.dataset.month; go({view: 'calendar', month: m === thisMonth() ? '' : m}); return; }
     const more = e.target.closest('[data-more]');
-    if (more) { openPop(more.dataset.more, more.closest('.cday')); return; }
-    const multi = e.target.closest('[data-multi]');
-    if (multi) { openPop(multi.closest('.cday').dataset.day, multi.closest('.cday')); return; }
-    const a = e.target.closest('[data-app]');
-    if (a) { go('schools', {id: a.dataset.app}); return; }
-    const td = e.target.closest('[data-todo]');
-    if (td) { const x = S.todos.find(z => z.id === td.dataset.todo); if (x) { x.done = !x.done; saveTodos(); } return; }
-    if (e.target.closest('#cal-print')) { document.dispatchEvent(new CustomEvent('print-all')); return; }
-    if (cal.pop && !e.target.closest('#daypop')) closePop();
+    if (more) { showInNext(more.dataset.more); return; }
+    if (e.target.closest('[data-subscribe]')) { settings.open('ics'); return; }
   });
-  view.addEventListener('submit', e => {
-    const f = e.target.closest('[data-pop-add]');
-    if (!f) return;
-    e.preventDefault();
-    const inp = f.querySelector('input'), text = inp.value.trim();
-    if (!text) return;
-    S.todos.push({id: uid(), text, due: f.dataset.popAdd, appId: '', done: false, createdAt: Date.now()});
-    saveTodos();
-    openPop(f.dataset.popAdd, document.querySelector(`.cday[data-day="${f.dataset.popAdd}"]`));
-  });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && cal.pop) closePop(); });
+  // 視窗大小變了就重新量（只在看得到的時候）
+  let raf = 0;
+  const again = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (!root.hidden && shown) fit(); }); };
+  if (typeof ResizeObserver === 'function') new ResizeObserver(again).observe(root);
+  else addEventListener('resize', again);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(again);
 }

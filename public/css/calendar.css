@@ -1,0 +1,67 @@
+/* 行事曆（js/calendar.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   月曆填滿畫面：週數（4–6）平分高度，格子放不下的由 calendar.js 量過後收成「＋N」，所以格子裡的字不會被切掉。 */
+#view-calendar { padding: 18px 36px 20px; }
+.cal { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.cal-h { display: flex; align-items: center; gap: 16px; flex: none; margin-bottom: 12px; }
+.cal-h h1 { font-size: 20px; line-height: 32px; font-weight: 600; min-width: 7.2em; white-space: nowrap; }
+.cal-nav { display: flex; align-items: center; gap: 2px; }
+.cal-nav .btn { margin-left: 8px; }
+.cal-sub { margin-left: auto; }
+.cal-wd, .cal-g { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-wd { flex: none; font-size: 12px; line-height: 18px; color: var(--ink-3); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.cal-wd span { padding: 0 8px; }
+.cal-g { flex: 1; min-height: 0; grid-template-rows: repeat(var(--weeks, 6), minmax(0, 1fr)); }
+.cal-empty { display: none; }
+
+/* 一天 */
+.cd { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 4px 6px 3px 8px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cd:nth-child(7n + 1) { border-left: 0; padding-left: 0; }
+.cd-h { display: flex; align-items: baseline; gap: 6px; flex: none; font-size: 13px; line-height: 18px; }
+.cd-n { color: var(--ink-2); }
+.cd.past .cd-n, .cd.out .cd-n { color: var(--ink-3); }
+.cd.today .cd-n, .cd-today { color: var(--accent); font-weight: 600; }
+.cd-today { font-size: 12px; }
+.cd-w { display: none; }
+.cd-x { margin-left: auto; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.cd-i { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+
+/* 一件事：時間、學校（學校顏色）、事情。要做的、要去的用正常的字；名單、放榜用次要灰；還要先過名單的面試再淡一點；逾期用強調色。 */
+.ci { display: block; flex: none; font-size: 13px; line-height: 18px; padding: 0 4px; margin: 0 -4px; border-radius: 4px; color: var(--ink); overflow-wrap: anywhere; }
+a.ci:hover { background: var(--tint); }
+.ci-t { color: var(--ink-2); }
+.ci-l { word-break: keep-all; }
+.ci.check .ci-l { color: var(--ink-2); }
+.ci.tent .ci-l, .ci.tent .ci-t { color: var(--ink-3); }
+.ci.late .ci-l, .ci.late .ci-t { color: var(--accent); }
+.ci.season { color: var(--ink-3); }
+.cd-more { flex: none; align-self: flex-start; font-size: 12px; line-height: 18px; }
+
+/* 視窗不夠大：整頁捲動，格子跟著內容長高，全部列出來 */
+@media (max-width: 1180px), (max-height: 620px) {
+  #view-calendar { padding: 16px 24px 24px; }
+  .cal { height: auto; }
+  .cal-g { grid-template-rows: none; grid-auto-rows: minmax(96px, auto); }
+  .cd-i { flex: none; overflow: visible; }
+}
+
+/* 窄（手機、直放的平板）：七欄太擠，改成一天一列，只列這個月有事情的日子 */
+@media (max-width: 760px) {
+  .cal-h { gap: 8px; margin-bottom: 4px; }
+  .cal-h h1 { min-width: 0; }
+  .cal-nav .btn { margin-left: 4px; }
+  .cal-wd { display: none; }
+  .cal-g { display: block; border-top: 1px solid var(--line); }
+  .cd, .cd:nth-child(7n + 1) { display: grid; grid-template-columns: 6.6em minmax(0, 1fr); column-gap: 12px; padding: 10px 0; border-left: 0; }
+  .cd.out, .cd.none { display: none; }
+  .cd-h { flex-direction: column; align-items: flex-start; gap: 0; font-size: 15px; line-height: 24px; }
+  .cd-n, .cd-today { display: none; }
+  .cd-w { display: inline; color: var(--ink-2); white-space: nowrap; }
+  .cd.today .cd-w { color: var(--accent); font-weight: 600; }
+  .cd-x { margin-left: 0; font-size: 13px; line-height: 20px; }
+  .cd-i { margin-top: 0; gap: 4px; }
+  .ci { font-size: 15px; line-height: 24px; }
+  .cal-empty { display: block; padding-top: 16px; }
+}
+@media (max-width: 600px) {
+  #view-calendar { padding: 8px 16px 24px; }
+}

@@ -1,386 +1,563 @@
-// 學校：左邊一排學校，右邊是選到的那一間。右邊依流程分段：報名與日期 → 備審 → 面試 → 結果 → 簡章重點 → 基本資料。
-import {S, P, STATUS, KINDS, METHODS, DEFAULT_KIT, COMMON_QUESTIONS, STAGE_ORDER, esc, clone, uid, todayKey, diffDays, md, fmtDate, cdText, appName, deptMain, schoolLinks, pdfUrl, firstDate, nextEventOf, activeApp, upsertApp, removeApp, nextStep, blankApp, numOrNull, isKey, composing, debounce, saveHooks, toast, fmtMoney, rlText, itemClass, docListHtml, programDates, regStepsFor} from './core.js';
-import {icon, hueStyle, stateHtml, shortName, whenText, mdw, countdownHtml} from './ui.js';
-import {go} from './router.js';
+// 學校（#schools、#schools/<id>）：左邊一排學校，右邊是選到的那一間。
+// 由上而下：學校名・狀態 → 下一步（大字，打勾和回答都在這裡）→ 兩欄：我的（時程・備審・紀錄）｜簡章（13px 灰字，只列這個階段用得到的）。
+// 平常都是純文字；要改就按那一段的「改」，只有那一段變成表單（規格 §0.2、§5）。
+import {$, S, esc, now, today, appById, programOf, linksOf, pdfAt, colourOf, shortName, deptName, agendaNow, orderNow, statusOf, stageOf, timelineOf, eventsFor, act, actx, mutate, mutateMany, removeApp, rerender, syncMarks, syncUnseen, ackSync, PALETTE, namesOf, actionToast, tickToast} from './core.js';
+import {setUrl, href} from './router.js';
+import {hueAttr, ext, pg, md, mdw, fmtVal, icon, isEditing, editKey, editForm, onEditSave, timeInput, normTime, popMenu, fromAhead, fromText, methodText, feeText} from './ui.js';
+import * as L from './logic.js';
+import * as add from './add.js';
 
-export const sv = {id: null, sec: {}};
-let cur = null, delArmed = false, delTimer = null, pickResult = false;
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const SECS = [['reg', '報名與日期'], ['docs', '備審資料'], ['interview', '面試'], ['result', '放榜與結果'], ['brochure', '簡章重點'], ['info', '基本資料']];
+// 這個畫面自己的狀態（重畫時保留）：選到哪間、展開了什麼、下一步正在問什麼、打開時的簡章更新標記。
+const ST = {id: '', all: new Set(), docsOpen: new Set(), refOpen: new Set(), ask: null, marks: null, focus: ''};
+// 「改」表單的草稿：時程、備審的表單會增減列，ui.js 的草稿保留不夠用，自己記。
+const D = {key: '', rows: new Map(), del: new Set(), restore: new Set(), adds: [], docDel: new Set(), docAdds: ['']};
+let V = null;   // 這次畫的：{app, p, next}
+const cur = () => V && appById(V.app.id);
 
-function defaultSec(a) {
-  const t = todayKey(), left = (a.docs || []).filter(d => !d.done).length;
-  switch (a.status) {
-    case 'prep': case 'skipped': return 'reg';
-    case 'applied': { const iv = firstDate(a, ['interview', 'exam', 'window']); return left ? 'docs' : iv && iv.date >= t && diffDays(iv.date) <= 14 ? 'interview' : 'docs'; }
-    case 'interview': return 'interview';
-    default: return 'result';
+/* ---------- 小工具 ---------- */
+const toggle = (set, k) => { if (set.has(k)) set.delete(k); else set.add(k); };
+const names = ids => namesOf(ids).join('、');
+const lines = s => String(s || '').split('\n').map(x => x.trim()).filter(Boolean);
+const nz = s => String(s || '').normalize('NFKC').replace(/\s+/g, '').replace(/…$/, '');
+const docRef = full => 'doc|' + nz(full).slice(0, 40);   // 和 logic.js 的備審 ref 一樣
+// 「資安外加 醫學資訊…學程」→「醫學資訊…學程・資安外加」：系名在前
+const deptFull = dept => { const {main, quals} = L.splitDept(dept); return [main, ...quals].filter(Boolean).join('・'); };
+
+function pickDefault() {
+  // 規格：#schools 沒指定時，打開接下來第一列的那間（不是清單第一間：成大十月就交了）
+  const ag = agendaNow(), r = ag.rows[0], a = r && appById(r.appId);
+  if (a) return a;
+  const o = orderNow();
+  return o.active[0] || o.ended[0] || S.apps[0];
+}
+
+/* ---------- 簡章全文：找出每一段在 PDF 的第幾頁 ---------- */
+// programs.json 只記科系那一頁；格式規定、面試注意常寫在別頁，用全文找一次。找不到就用科系那頁。
+const TXT = new Map();
+function loadText(code) {
+  if (!code || TXT.has(code)) return;
+  TXT.set(code, null);
+  fetch(`/data/brochures/text/${encodeURIComponent(code)}.json`).then(r => r.ok ? r.json() : null).then(d => {
+    if (!d || !Array.isArray(d.pages)) return;
+    TXT.set(code, d.pages.map(nz));
+    if (V && V.p && V.p.code === code && !$('#view-schools').hidden) rerender();
+  }).catch(() => {});
+}
+function findPage(p, line) {
+  const pages = p && TXT.get(p.code);
+  if (!pages || !line) return 0;
+  const q = nz(String(line).replace(/^\s*(注意事項[:：]|[（(]?[一二三四五六七八九十\d]+[)）.、])\s*/, '')).slice(0, 14);
+  if (q.length < 6) return 0;
+  const own = new Set(p.pg || []);
+  let first = 0;
+  for (let i = 0; i < pages.length; i++) if (pages[i].includes(q)) { if (own.has(i + 1)) return i + 1; if (!first) first = i + 1; }
+  return first;
+}
+
+/* ---------- 左邊：學校清單 ---------- */
+function railHtml(sel, first) {
+  const {active, ended} = orderNow(), t = today();
+  const row = a => {
+    const r = first.get(a.id), n = r ? L.daysBetween(t, r.date) : 0;
+    const when = !r ? '' : n >= 0 && n < 7 ? L.dayLabel(r.date, now()) + (n === 0 && r.time ? ' ' + r.time : '') : md(r.date);
+    const on = a.id === sel;
+    return `<a class="s-rr${on ? ' tint' : ''}" href="${esc(href('schools', a.id))}" ${hueAttr(a)}${on ? ' aria-current="page"' : ''}>
+      <span class="bar-hue"></span><span class="s-rr-n"><b>${esc(shortName(a))}</b><span>${esc(statusOf(a))}</span></span>
+      <span class="s-rr-w${r && (r.date === t || r.overdue) ? ' hot' : ''}">${esc(when)}</span><span class="s-rr-d">${esc(deptName(a))}</span></a>`;
+  };
+  return `<nav class="s-rail scroll" aria-label="我的學校">${active.map(row).join('')}${ended.length ? `<div class="s-end">結束</div>${ended.map(row).join('')}` : ''}</nav>`;
+}
+
+/* ---------- 頁首：校名、系組、狀態、⋯ ---------- */
+function headHtml(app, p) {
+  const l = linksOf(app);
+  const links = [ext(l.apply, '報名系統'), l.adm !== l.apply ? ext(l.adm, '招生網') : '', l.pdf ? ext(pdfAt(app, (p && p.pg || [])[0]), '簡章') : '', l.dept && l.dept !== l.adm && l.dept !== l.apply ? ext(l.dept, '系網') : ''].filter(Boolean);
+  return `<header class="s-head">
+    <div class="s-id"><div class="s-title" ${hueAttr(app)}><span class="dot"></span><h1>${esc(app.school)}</h1><span class="s-dept">${esc(deptFull(app.dept))}</span></div>
+      ${links.length ? `<div class="s-links">${links.join('')}</div>` : ''}</div>
+    <div class="s-side"><button class="s-status" type="button" data-status aria-haspopup="menu" aria-expanded="false">${esc(statusOf(app))}</button><button class="icon-btn" type="button" data-more aria-haspopup="menu" aria-expanded="false" aria-label="更多">${icon('more')}</button></div>
+  </header>`;
+}
+
+/* ---------- 下一步（焦點）：這間在接下來的第一列 ---------- */
+function nextHtml(app, n) {
+  if (!n) {
+    const up = stageOf(app) === 'ended' ? null : timelineOf(app).find(r => !r.past && r.type !== 'info');
+    return `<section class="s-next" aria-label="下一步" tabindex="-1"><div class="s-next-h">下一步</div>
+      <p class="s-nothing">這間沒有要做的事</p>${up ? `<p class="s-next-sub">${esc(L.fmtDate(up.date))}${up.time ? ' ' + esc(up.time) : ''}　${esc(up.label)}</p>` : ''}</section>`;
   }
-}
-const openSet = a => sv.sec[a.id] || (sv.sec[a.id] = new Set([defaultSec(a)]));
-
-/* ---------- 選擇與載入 ---------- */
-export function selectSchool(id, opts = {}) {
-  const a = id ? S.apps.find(x => x.id === id) : null;
-  if (!a && id !== 'new') { sv.id = null; cur = null; renderSchools(); return; }
-  cur = a ? clone(a) : blankApp();
-  sv.id = cur.id;
-  cur.dates = (cur.dates || []).map(d => ({id: d.id || uid(), kind: KINDS[d.kind] ? d.kind : 'other', date: d.date || '', end: d.end || '', time: d.time || '', note: d.note || ''})).sort((x, y) => (x.date || '9').localeCompare(y.date || '9'));
-  cur.docs = (cur.docs || []).map(d => ({id: d.id || uid(), name: d.name || '', done: !!d.done}));
-  if (!Array.isArray(cur.kit)) cur.kit = DEFAULT_KIT.map(n => ({id: uid(), name: n, done: false}));
-  if (!Array.isArray(cur.waitLog)) cur.waitLog = [];
-  if (!Array.isArray(cur.regSteps)) cur.regSteps = regStepsFor((cur.programId && P.byId.get(cur.programId)) || null);
-  pickResult = false;
-  disarmDelete();
-  if (opts.sec) openSet(cur).add(opts.sec);
-  if (!a) openSet(cur).add('info');
-  renderSchools();
-  renderSheet();
-  if (opts.sec) { const el = $(`#sheet .sec[data-sec="${opts.sec}"]`); if (el) el.scrollIntoView({block: 'nearest'}); }
-  if (!a) { const inp = $('#i-school'); if (inp) inp.focus(); }
-}
-export const currentId = () => sv.id;
-// 科系資料晚到時，重畫目前這間學校（簡章重點、報名系統連結、報名步驟要用到）。正在輸入就不打擾。
-export function refreshSheet() {
-  if (!cur) return;
-  commitSoon.flush();
-  if ($('#sheet').contains(document.activeElement)) return;
-  if (S.apps.some(a => a.id === cur.id)) selectSchool(cur.id); else renderSheet();
-}
-
-/* ---------- 左欄 ---------- */
-export function renderSchools() {
-  const t = todayKey();
-  const apps = [...S.apps].sort((a, b) => {
-    const oa = activeApp(a) ? 0 : 1, ob = activeApp(b) ? 0 : 1;
-    const na = nextEventOf(a), nb = nextEventOf(b);
-    return oa - ob || (na ? na.date : '9').localeCompare(nb ? nb.date : '9') || (STAGE_ORDER[a.status] ?? 9) - (STAGE_ORDER[b.status] ?? 9);
+  const day = L.dayLabel(n.date, now()), hot = n.date === today() || n.overdue, tt = L.timeText(n, now());
+  const what = n.parts.length
+    ? n.parts.map(pt => pt.opt
+      ? `<span class="s-optp">${esc(pt.name)}（選繳）</span>`
+      : `<label class="check lg task"><input type="checkbox" data-tick="${esc(pt.key)}"${pt.done ? ' checked' : ''}><span>${esc(pt.name)}${pt.own ? `<span class="s-own">${esc(pt.own)}</span>` : ''}</span></label>`).join('')
+    : `<span class="s-lab">${esc(n.label)}</span>`;
+  // 按鈕最多兩個：有問題就是回答；沒有就是報名系統（準備中）或「不去」。連結放最後。
+  let btns = '', link = '';
+  n.actions.forEach((a, i) => {
+    if (a.kind === 'link') { link = (n.type === 'do' && !n.question) ? `<a class="btn lg ext" href="${esc(a.href)}" target="_blank" rel="noopener">${esc(a.label)}</a>` : ext(a.href, a.label); return; }
+    const on = ST.ask && ST.ask.key === n.key && ST.ask.id === a.id;
+    btns += `<button class="btn lg${!n.question && a.kind === 'quiet' ? ' quiet' : ''}${on ? ' on' : ''}" type="button" data-act="${i}"${a.disabled ? ' disabled' : ''}${a.ask ? ` aria-expanded="${on}"` : ''}>${esc(a.label)}</button>`;
   });
-  $('#rail-count').textContent = S.apps.length || '';
-  const fee = S.apps.filter(a => !['prep', 'skipped'].includes(a.status)).reduce((s, a) => s + (Number(a.fee) || 0), 0);
-  $('#rail-fee').textContent = fee ? `已繳報名費 ${fmtMoney(fee)} 元` : '';
-  $('#rail').innerHTML = apps.length ? apps.map(a => {
-    const nx = nextEventOf(a), f = nx ? (nx.date >= t ? nx.date : nx.last) : null;
-    return `<button class="ritem ${a.id === sv.id ? 'on' : ''} ${a.status === 'prep' ? 'dashed' : ''} ${activeApp(a) ? '' : 'off'}" type="button" ${hueStyle(a)} data-app="${esc(a.id)}">
-      <span class="bar"></span>
-      <span><span class="n">${esc(shortName(a) || '（新學校）')}${stateHtml(a)}</span><span class="d">${esc(deptMain(a) || '（還沒填學系）')}${nx && activeApp(a) ? ` · ${KINDS[nx.kind].label} ${md(f)}` : ''}</span></span>
-    </button>`;
-  }).join('') : S.loaded ? '<div class="empty"><b>還沒有學校</b>按下面的「新增學校」</div>' : '<div class="empty">載入中…</div>';
-  if (cur) renderSheetMeta();
-  else if (!S.loaded) $('#sheet').innerHTML = '';
-  else if (!S.apps.length) $('#sheet').innerHTML = '<div class="empty"><b>從簡章選學校和系</b>日期、備審清單、報名系統連結都會自動帶進來</div>';
-  else if (!sv.id) $('#sheet').innerHTML = '<div class="empty">左邊選一間學校</div>';
+  const sub = [];
+  if (/^(今天|明天|後天)$/.test(day)) sub.push(L.fmtDate(n.date));
+  if (n.from && fromAhead(n.from, n.fromTime)) sub.push(fromText(n.from, n.fromTime));
+  if (n.note) sub.push(n.note);
+  const send = n.sendBy || (n.parts.find(pt => pt.sendBy) || {}).sendBy;
+  if (send) sub.push(`最晚 ${md(send)} 寄出`);
+  if (n.context) sub.push(n.context);
+  if (n.clash && n.clash.length) sub.push('同天：' + names(n.clash));
+  return `<section class="s-next${n.tentative ? ' tent' : ''}" aria-label="下一步" tabindex="-1"><div class="s-next-h">下一步</div>
+    <div class="s-nl"><span class="s-day${hot ? ' hot' : ''}">${esc(day)}</span>${tt ? `<span class="s-tm">${esc(tt)}</span>` : ''}<span class="s-what">${what}</span>${btns || link ? `<span class="s-acts">${btns}${link}</span>` : ''}</div>
+    ${sub.length ? `<p class="s-next-sub">${sub.map(esc).join('　')}</p>` : ''}${askHtml(n)}</section>`;
+}
+// 按了「備取」「遞補上了」「換到 B」之後才出現的那一小塊
+const askAction = () => { const k = ST.ask, n = V && V.next; return k && n && n.key === k.key ? n.actions.find(a => a.id === k.id && a.ask) || null : null; };
+function askHtml(n) {
+  const a = ST.ask && ST.ask.key === n.key ? askAction() : null;
+  if (!a) return '';
+  const q = a.ask, cancel = '<button class="link" type="button" data-ask-cancel>取消</button>';
+  if (q.type === 'confirm') return `<div class="s-ask"><span>${esc(q.text)}</span><button class="btn sm" type="button" data-ask-ok>${esc(q.ok || '確定')}</button>${cancel}</div>`;
+  if (q.type === 'number') return `<form class="s-ask" data-ask-form novalidate><label>${esc(q.label)} <input type="number" class="s-num" name="no" min="1" max="999" inputmode="numeric" value="${esc(ST.ask.no || '')}"></label><button class="btn sm" type="submit">確定</button>${cancel}</form>`;
+  return `<form class="s-ask" data-ask-form novalidate><span>${esc(q.label)}</span><input type="date" name="date" value="${esc(ST.ask.date || '')}" aria-label="日期">${timeInput('time', ST.ask.time || '', 'aria-label="時間"')}<button class="btn sm" type="submit">確定</button>${cancel}<span class="form-err" data-ask-err></span></form>`;
 }
 
-/* ---------- 右欄 ---------- */
-function links(a) {
-  const L = schoolLinks(a.school) || {}, p = a.programId && P.byId.get(a.programId);
-  return [L.apply && [L.apply, '網路報名系統'], L.adm && [L.adm, '學校招生網'], p && pdfUrl(p.code) && [pdfUrl(p.code), '簡章 PDF'], /^https?:\/\//.test(a.url || '') && [a.url, '系所網站'], p && [`https://sta-tw.org/bochures/program/${encodeURIComponent(p.i)}/`, '特殊選才網']].filter(Boolean)
-    .map(([u, l]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${l} ↗</a>`).join('');
+/* ---------- 時程 ---------- */
+function schedHtml(app) {
+  const key = 'sched:' + app.id, rows = timelineOf(app);
+  if (isEditing(key)) return `<section class="sec s-sched"><div class="sec-h"><h3>時程</h3></div>${schedForm(app, key, rows)}</section>`;
+  const unseen = (ST.marks && ST.marks.unseen) || new Set(), all = ST.all.has(app.id);
+  if (stageOf(app) === 'ended') for (const r of rows) r.next = false;   // 結束了就沒有「下一個」
+  // 平常只列里程碑（報名→名單→面試→放榜→報到），自己加的和剛被簡章改到的也列；其他（複查、遞補截止…）收在「全部 N 個日期」
+  const shown = all ? rows : rows.filter(r => r.milestone || r.src === 'mine' || (r.upd && unseen.has(r.upd)));
+  const more = all || rows.length > shown.length;
+  const gone = ((ST.marks && ST.marks.list) || []).filter(c => c.removed && !c.doc);
+  // 「11/02 09:00 起」每個畫面只寫一次：下一步已經寫了就不寫，同一天的報名・繳費・繳件也只寫第一列
+  const said = new Set(V && V.next && V.next.from && fromAhead(V.next.from, V.next.fromTime) ? V.next.rowIds : []), saidText = new Set();
+  const fromOnce = r => {
+    if (!r.from || !fromAhead(r.from, r.fromTime) || said.has(r.rowId)) return '';
+    const t = fromText(r.from, r.fromTime), k = r.date + t;
+    if (saidText.has(k)) return '';
+    saidText.add(k);
+    return t;
+  };
+  return `<section class="sec s-sched"><div class="sec-h"><h3>時程</h3>${more ? `<button class="link" type="button" data-all aria-expanded="${all}">${all ? '收起' : `全部 ${rows.length} 個日期`}</button>` : ''}<button class="link edit" type="button" data-edit="${esc(key)}">改</button></div>
+    ${shown.length ? `<div class="s-tl">${shown.map(r => schedRow(r, unseen, fromOnce(r))).join('')}</div>` : '<p class="empty">還沒有日期</p>'}
+    ${gone.map(c => `<p class="s-sync">簡章更新：拿掉 ${esc(c.what)} ${esc(fmtVal(c.from))}</p>`).join('')}</section>`;
 }
-export function renderSheet() {
-  if (!cur) return;
-  const open = openSet(cur);
-  $('#sheet').innerHTML = `
-    <div class="sheet-head">
-      <div class="sheet-title">
-        <h2 ${hueStyle(cur)}><span class="dot"></span><span id="sh-name">${esc(cur.school || '新學校')}</span><span id="sh-state">${stateHtml(cur)}</span></h2>
-        <div class="d" id="sh-dept">${esc(cur.dept || '在「基本資料」填學系')}</div>
-        <div class="sheet-links" id="sh-links">${links(cur)}</div>
-      </div>
-      <div class="sheet-tools"><span class="save-state" id="sh-save">${cur.example ? '範例，修改後會變成你的紀錄' : ''}</span>
-        <div class="menu" id="sh-menu"><button class="icon-btn" type="button" aria-label="更多" data-menu>${icon('more')}</button>
-          <div class="menu-list"><button type="button" data-open-sec="info">基本資料</button>${cur.programId ? '<button type="button" data-view-prog>看簡章原文</button><button type="button" data-reset-dates>用簡章日期重設</button>' : ''}<button type="button" data-print-one>列印這一間</button><button type="button" class="danger-text" id="sh-delete">刪除這間學校</button></div></div></div>
+function schedRow(r, unseen, from) {
+  const isToday = r.date === today() && !r.past;
+  // 郵戳類不寫鐘點；沒時間的、還沒到的寫「時間未公布」（只有學校頁這樣寫）
+  const time = r.mail === 'postmark' ? '郵戳為憑' : r.mail === 'arrive' ? (r.time ? `${r.time} 前寄達` : '寄達為憑') : r.time || (r.past ? '' : '時間未公布');
+  const unk = !r.time || r.mail;
+  const bits = [];
+  if (r.end) bits.push(`到 ${md(r.end)}`);
+  if (from) bits.push(from);
+  if (r.note) bits.push(r.note);
+  if (r.clash && r.clash.length) bits.push('同天：' + names(r.clash));
+  if (r.brochureNow) bits.push(`簡章現在是 ${md(r.brochureNow.date)}${r.brochureNow.time ? ' ' + r.brochureNow.time : ''}`);
+  if (r.gone) bits.push('簡章已拿掉');
+  if (r.upd && unseen.has(r.upd)) bits.push('簡章更新');
+  return `<div class="s-tr${r.past ? ' past' : ''}${r.next ? ' next' : ''}${isToday ? ' today' : ''}"><span class="d">${isToday ? '今天' : esc(L.fmtDate(r.date))}</span><span class="t${unk ? ' unk' : ''}">${esc(time)}</span><span class="w"><span class="l">${esc(r.label)}</span>${r.edited ? '<span class="edited">已改</span>' : ''}${bits.map(b => `<small>${esc(b)}</small>`).join('')}</span></div>`;
+}
+// 紀錄裡記了自己的面試時間（ivTime）：時程上那一列顯示的就是它，所以「改」也顯示、也改這個時間（存回紀錄）。
+const ivRowOf = app => { const k = (app.dates || []).some(d => d.kind === 'interview') ? 'interview' : 'exam'; return d => !!normTime(app.ivTime || '') && d.kind === k; };
+function draft(key) {
+  if (D.key === key) return;
+  Object.assign(D, {key, rows: new Map(), del: new Set(), restore: new Set(), adds: [], docDel: new Set(), docAdds: ['']});
+}
+function schedForm(app, key, rows) {
+  draft(key);
+  const byId = new Map((app.dates || []).map(d => [d.id, d]));
+  const order = [...rows.map(r => r.rowId), ...(app.dates || []).map(d => d.id).filter(id => !rows.some(r => r.rowId === id))];
+  const labelOf = new Map(rows.map(r => [r.rowId, r])), isIv = ivRowOf(app);
+  const row = id => {
+    const d = byId.get(id), r = labelOf.get(id);
+    const v = D.rows.get(id) || {date: d.date || '', time: isIv(d) ? app.ivTime : d.time || '', label: r ? r.label : L.rowLabel(d)};
+    const atBro = d.bro && v.date === (d.bro.date || '') && v.time === (d.bro.time || '');
+    const edited = d.src === 'brochure' && d.bro && !(D.restore.has(id) && atBro) && L.isEdited({...d, date: v.date, time: isIv(d) ? d.time : v.time});
+    // 簡章的名稱不給改（和備審一樣）：報名列的名稱決定要勾哪幾個部分，放榜、報到的名稱也是固定的。自己加的可以改。
+    const lab = d.src !== 'mine' ? `<span class="s-fl">${esc(v.label)}</span>` : `<input type="text" name="l:${esc(id)}" data-sf="label" data-row="${esc(id)}" value="${esc(v.label)}" aria-label="名稱" maxlength="40">`;
+    return `<div class="edit-row s-er"><input type="date" class="d" name="d:${esc(id)}" data-sf="date" data-row="${esc(id)}" value="${esc(v.date)}" aria-label="日期">${timeInput('t:' + id, v.time, `data-sf="time" data-row="${esc(id)}" aria-label="時間"`)}<span class="l">${lab}</span><span class="r">${edited ? `<button class="link" type="button" data-sched-restore="${esc(id)}">還原</button>` : ''}</span><button class="rm x" type="button" data-sched-rm="${esc(id)}" aria-label="刪除這個日期">✕</button></div>`;
+  };
+  const addRow = (v, i) => `<div class="edit-row s-er"><input type="date" class="d" name="ad:${i}" data-sf="date" data-add="${i}" value="${esc(v.date)}" aria-label="日期">${timeInput('at:' + i, v.time, `data-sf="time" data-add="${i}" aria-label="時間"`)}<span class="l"><input type="text" name="al:${i}" data-sf="label" data-add="${i}" value="${esc(v.label)}" placeholder="名稱" aria-label="名稱" maxlength="40"></span><span class="r"></span><button class="rm x" type="button" data-sched-add-rm="${i}" aria-label="不要這一列">✕</button></div>`;
+  const p = programOf(app), bro = p ? L.brochureRows(p) : [];
+  const hidden = (app.hidden || []).filter(ref => !ref.startsWith('doc|')).map(ref => bro.find(b => b.ref === ref)).filter(Boolean);
+  const inner = `<div class="s-ef">${order.filter(id => !D.del.has(id) && byId.has(id)).map(row).join('')}${D.adds.map(addRow).join('')}</div>
+    ${hidden.length ? `<p class="s-hid">已刪除：${hidden.map(b => `${esc(L.rowLabel(b))} ${esc(md(b.date))} <button class="link" type="button" data-unhide="${esc(b.ref)}">加回</button>`).join('　')}</p>` : ''}
+    <p class="form-err" data-err></p>`;
+  return editForm(key, inner, {cls: 's-sched-ed', extra: '<button class="link" type="button" data-add-date>＋ 新增日期</button>'});
+}
+function saveSched(form, key) {
+  const app = appById(key.slice(6));
+  if (!app) return;
+  const err = (el, msg) => { form.querySelectorAll('.bad').forEach(x => x.classList.remove('bad')); if (el) { el.classList.add('bad'); el.focus(); } form.querySelector('[data-err]').textContent = msg; return false; };
+  const val = name => { const el = form.elements[name]; return el ? el.value.trim() : ''; };
+  const edits = [], adds = [], restores = [], orig = new Map(timelineOf(app).map(r => [r.rowId, r.label])), isIv = ivRowOf(app);
+  let ivTime;
+  for (const d of app.dates || []) {
+    if (D.del.has(d.id) || !form.elements['d:' + d.id]) continue;
+    const date = val('d:' + d.id), time = normTime(val('t:' + d.id));
+    if (!date) return err(form.elements['d:' + d.id], '日期要填');
+    if (time === null) return err(form.elements['t:' + d.id], '時間寫成 17:00');
+    const ch = {}, iv = isIv(d);
+    if (date !== (d.date || '')) ch.date = date;
+    // 面試列的時間是紀錄裡的 ivTime：改了就存回紀錄；按了還原就清掉，回到簡章的時間
+    if (iv) { if (D.restore.has(d.id) && d.bro && time === (d.bro.time || '')) ivTime = ''; else if (time !== app.ivTime) ivTime = time; }
+    else if (time !== (d.time || '')) ch.time = time;
+    const lab = form.elements['l:' + d.id];
+    if (lab && lab.value.trim() && lab.value.trim() !== (orig.get(d.id) ?? L.rowLabel(d))) ch.label = lab.value.trim();
+    // 改回和簡章一樣（或按了還原）：用 restoreDate，連 from、end 一起回到簡章
+    if (d.src === 'brochure' && d.bro && (ch.date || ch.time !== undefined || D.restore.has(d.id)) && date === d.bro.date && (iv || time === (d.bro.time || ''))) { restores.push(d.id); delete ch.date; delete ch.time; }
+    if (Object.keys(ch).length) edits.push([d.id, ch]);
+  }
+  for (let i = 0; i < D.adds.length; i++) {
+    const date = val('ad:' + i), time = normTime(val('at:' + i)), label = val('al:' + i);
+    if (!date && !label && !time) continue;
+    if (!date) return err(form.elements['ad:' + i], '日期要填');
+    if (time === null) return err(form.elements['at:' + i], '時間寫成 17:00');
+    if (!label) return err(form.elements['al:' + i], '名稱要填');
+    adds.push({date, time, label});
+  }
+  const dels = [...D.del].filter(id => (app.dates || []).some(d => d.id === id));
+  if (!edits.length && !adds.length && !dels.length && !restores.length && ivTime === undefined) return;
+  const removed = dels.map(id => { const d = app.dates.find(x => x.id === id); return L.rowLabel(d) || L.KIND_LABEL[d.kind] || ''; });
+  mutate(app.id, a => {
+    let x = a;
+    for (const id of restores) x = L.applyAction(x, 'restoreDate', {rowId: id}, actx(x));
+    for (const [id, ch] of edits) x = L.applyAction(x, 'editDate', {rowId: id, ...ch}, actx(x));
+    for (const id of dels) x = L.applyAction(x, 'removeDate', {rowId: id}, actx(x));
+    for (const v of adds) x = L.applyAction(x, 'addDate', v, actx(x));
+    if (ivTime !== undefined) x = L.applyAction(x, 'editRecord', {ivTime}, actx(x));
+    return x;
+  }, {toast: dels.length && !edits.length && !adds.length && !restores.length && ivTime === undefined ? `已刪除 ${shortName(app)} ${removed.join('、')}` : `已記下：${shortName(app)} 時程`});
+}
+
+/* ---------- 備審 ---------- */
+// 簡章原文去掉和短名稱重複的開頭，剩下的當灰字說明：「學歷證明（如學生證…）」→「如學生證…」
+function docDesc(d) {
+  const full = String(d.full || '').trim(), name = String(d.name || '').trim();
+  if (!full || !name || nz(full) === nz(name)) return '';
+  let i = 0, j = 0;
+  while (i < full.length && j < name.length) {
+    if (full[i] === name[j]) { i++; j++; continue; }
+    if (/\s/.test(full[i])) { i++; continue; }
+    if (/\s/.test(name[j])) { j++; continue; }
+    const m = /^[（(][^）)]{0,4}[）)]/.exec(full.slice(i));    // 「高中(職)」的(職)
+    if (m) { i += m[0].length; continue; }
+    break;
+  }
+  if (j < name.length) return full;
+  let rest = full.slice(i).trim().replace(/^[：:，,、；;\s]+/, '');
+  const m = /^[（(]([^（()）]*)[）)]$/.exec(rest);
+  if (m) rest = m[1];
+  else if (/^[（(]/.test(rest) && !/[）)]/.test(rest)) rest = rest.slice(1);   // 簡章抽出來被截斷、沒有右括號的
+  return rest;
+}
+function docsHtml(app) {
+  const key = 'docs:' + app.id, p = programOf(app), docs = app.docs || [];
+  if (isEditing(key)) return `<section class="sec s-docs"><div class="sec-h"><h3>備審</h3></div>${docsForm(app, key, p)}</section>`;
+  const summary = L.docsMode(app, p, now()) === 'summary', open = ST.docsOpen.has(app.id);
+  if (summary && !open) return `<section class="sec s-docs"><div class="sec-h"><h3>備審</h3><span class="count">${docs.length} 項${app.status === 'skipped' ? '' : '・已隨報名送出'}</span>${docs.length ? '<button class="link" type="button" data-docs-open aria-expanded="false">展開</button>' : ''}</div></section>`;
+  const req = docs.filter(d => !d.opt), done = req.filter(d => d.done).length;
+  const generic = docs.length > 0 && docs.every(d => d.src === 'placeholder');
+  const count = docs.length ? `${done}／${req.length}${generic ? '・通用項目' : ''}` : '';
+  const item = d => {
+    const desc = docDesc(d);
+    return `<li><label class="check task"><input type="checkbox" data-doc="${esc(d.id)}"${d.done ? ' checked' : ''}><span>${esc(d.name)}${d.opt ? ' <span class="opt">選繳</span>' : ''}${desc ? ` <span class="s-dd">${esc(desc)}</span>` : ''}${d.gone ? ' <span class="s-dd">簡章已拿掉</span>' : ''}</span></label></li>`;
+  };
+  return `<section class="sec s-docs"><div class="sec-h"><h3>備審</h3>${count ? `<span class="count">${esc(count)}</span>` : ''}${summary ? '<button class="link" type="button" data-docs-open aria-expanded="true">收起</button>' : ''}<button class="link edit" type="button" data-edit="${esc(key)}">改</button></div>
+    ${docs.length ? `<ul class="s-dl">${docs.map(item).join('')}</ul>` : '<p class="empty">沒有備審項目</p>'}</section>`;
+}
+function docsForm(app, key, p) {
+  draft(key);
+  const docs = (app.docs || []).filter(d => !D.docDel.has(d.id));
+  const hid = (app.hidden || []).filter(r => r.startsWith('doc|')).map(ref => ({ref, full: ((p && p.docs) || []).find(f => docRef(f) === ref)})).filter(x => x.full);
+  const inner = `<ul class="s-dl s-def">${docs.map(d => `<li class="edit-row"><span>${esc(d.name)}${d.opt ? ' <span class="opt">選繳</span>' : ''}</span><button class="rm" type="button" data-doc-rm="${esc(d.id)}" aria-label="移除 ${esc(d.name)}">✕</button></li>`).join('')}
+    ${D.docAdds.map((v, i) => `<li class="edit-row"><input type="text" name="doc:${i}" data-doc-add="${i}" value="${esc(v)}" placeholder="新增項目" aria-label="新增項目" maxlength="40"><button class="rm" type="button" data-doc-add-rm="${i}" aria-label="不要這一項">✕</button></li>`).join('')}</ul>
+    ${hid.length ? `<p class="s-hid">已移除：${hid.map(h => `${esc(L.shortDoc(h.full))} <button class="link" type="button" data-unhide-doc="${esc(h.ref)}">加回</button>`).join('　')}</p>` : ''}`;
+  return editForm(key, inner, {extra: '<button class="link" type="button" data-doc-more>＋ 再一項</button>'});
+}
+function saveDocs(form, key) {
+  const app = appById(key.slice(5));
+  if (!app) return;
+  const adds = [...form.querySelectorAll('[data-doc-add]')].map(el => el.value.trim()).filter(Boolean);
+  const dels = [...D.docDel].filter(id => (app.docs || []).some(d => d.id === id));
+  if (!adds.length && !dels.length) return;
+  const gone = dels.map(id => app.docs.find(d => d.id === id).name);
+  mutate(app.id, a => {
+    let x = a;
+    for (const id of dels) x = L.applyAction(x, 'hideDoc', {docId: id}, actx(x));
+    for (const name of adds) x = L.applyAction(x, 'addDoc', {name}, actx(x));
+    return x;
+  }, {toast: dels.length && !adds.length ? `已移除 ${shortName(app)} ${gone.join('、')}` : `已記下：${shortName(app)} 備審`});
+}
+
+/* ---------- 紀錄 ---------- */
+function recFields(app, p) {
+  const f = L.recordFields(app, p, now());
+  // 只有筆試（成大）：欄位名稱跟著改
+  const go = eventsFor(app).filter(e => e.role === 'go');
+  if (go.length && !go.some(e => e.kind === 'interview')) for (const x of f) x.label = x.label.replace('面試被問了什麼', '筆試考了什麼').replace('面試', '筆試');
+  return f;
+}
+function recHtml(app) {
+  const key = 'rec:' + app.id, p = programOf(app), fields = recFields(app, p);
+  if (isEditing(key)) {
+    const input = f => f.key === 'ivTime' ? timeInput('ivTime', f.value, `id="rec-ivTime"`)
+      : f.key === 'asked' || f.key === 'notes' ? `<textarea id="rec-${f.key}" name="${f.key}" rows="3">${esc(f.value)}</textarea>`
+      : `<input type="text" id="rec-${f.key}" name="${f.key}" value="${esc(f.value)}" maxlength="${f.key === 'regNo' ? 40 : 120}">`;
+    const inner = `<div class="s-kv s-kv-ed">${fields.map(f => `<label for="rec-${f.key}">${esc(f.label)}</label><div>${input(f)}</div>`).join('')}</div><p class="form-err" data-err></p>`;
+    return `<section class="sec s-rec"><div class="sec-h"><h3>紀錄</h3></div>${editForm(key, inner)}</section>`;
+  }
+  const vals = fields.filter(f => f.value);
+  if (!vals.length) return `<section class="sec s-rec"><div class="sec-h"><h3>紀錄</h3></div><button class="link" type="button" data-edit="${esc(key)}">＋ 記一筆</button></section>`;
+  return `<section class="sec s-rec"><div class="sec-h"><h3>紀錄</h3><button class="link edit" type="button" data-edit="${esc(key)}">改</button></div>
+    <dl class="s-kv">${vals.map(f => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join('')}</dl></section>`;
+}
+function saveRec(form, key) {
+  const app = appById(key.slice(4));
+  if (!app) return;
+  const pl = {};
+  for (const k of ['regNo', 'place', 'asked', 'notes']) if (form.elements[k]) pl[k] = form.elements[k].value;
+  if (form.elements.ivTime) {
+    const t = normTime(form.elements.ivTime.value);
+    if (t === null) { form.elements.ivTime.classList.add('bad'); form.elements.ivTime.focus(); form.querySelector('[data-err]').textContent = '時間寫成 17:00'; return false; }
+    pl.ivTime = t;
+  }
+  const after = L.applyAction(app, 'editRecord', pl, actx(app));
+  if (JSON.stringify(after) === JSON.stringify(app)) return;
+  act(app.id, 'editRecord', pl, {toast: `已記下：${shortName(app)} 紀錄`});
+}
+
+/* ---------- 簡章（右欄，依階段） ---------- */
+const NOISE_CW = /^正取報到[\n；;]*備取(等待|填寫就讀意願)$/;
+function submitLines(app, p) {
+  const out = [], ev = eventsFor(app).find(e => e.role === 'reg' && e.parts.some(pt => pt.key === 'docs'));
+  if (ev) {
+    const pt = ev.parts.find(x => x.key === 'docs');
+    const how = pt.mail === 'postmark' ? '郵寄，郵戳為憑' : pt.mail === 'arrive' ? '寄達為憑' : /上傳/.test(pt.name) ? '網路上傳' : ev.kind === 'reg' ? '和網路報名一起繳交' : '';
+    const t = [how, ev.note].filter(Boolean).join('；');
+    if (t) out.push(t);
+  }
+  if (p.rl && p.rl !== 'N') out.push(`推薦函：${p.rl.replace(/^暗/, '暗推').replace(/^明/, '明推')}`);
+  if (p.pf === 'Y') out.push('要附作品集');
+  return out;
+}
+// 每一塊：{k:小標, lines, page, more:'qx'|'ivn'（超過 4 行收起來）}
+function refBlocks(app, p, stage) {
+  const pg0 = (p.pg || [])[0] || 0, out = [];
+  // 一行可以是字串，或 {html, text}（html 給畫面、text 給列印）
+  const add = (k, ls, page, more) => { ls = (ls || []).map(x => x && x.html ? x : String(x || '').trim()).filter(Boolean); if (ls.length) out.push({k, lines: ls, page: page || pg0, more}); };
+  const method = methodText(p), how = k => (p.how && typeof p.how === 'object' && p.how[k]) || '';
+  const cw = p.cw && !NOISE_CW.test(p.cw.trim()) ? lines(p.cw) : [];
+  if (stage === 'prep') {
+    const facts = [p.fee && `報名費 ${feeText(p.fee)}`, p.q != null && p.q !== '' && `名額 ${p.q}`, /^\d+$/.test(String(p.mx || '')) && `同校最多報 ${p.mx} 個系組`].filter(Boolean);
+    const nw = x => `<span class="nowrap">${esc(x)}</span>`, items = method ? method.split('・') : [];
+    add('甄選方式', [{html: [items.map(nw).join('・'), ...facts.map(nw)].filter(Boolean).join('　'), text: [method, ...facts].filter(Boolean).join('　')}], pg0);
+    add('繳件方式', submitLines(app, p), pg0);
+    add('格式規定', p.fmt, findPage(p, (p.fmt || [])[0]));
+    add('報名資格', lines(p.qx || p.tgt), p.qxp, 'qx');
+  } else if (stage === 'applied' || stage === 'interview') {
+    add('甄選方式', [method], pg0);
+    add('面試注意', p.ivn, findPage(p, (p.ivn || [])[0]), 'ivn');
+    add('考試地點', [p.loc], pg0);
+  } else if (stage === 'waiting' || stage === 'ended') {
+    add('甄選方式', [method], pg0);
+    if (stage === 'waiting') add('報到・遞補', [...cw, how('confirm')], findPage(p, cw[0]));
+  } else {
+    add('報到・遞補', [...cw, how('confirm')], findPage(p, cw[0]));
+    add('放棄方式', [how('giveup')], pg0);
+  }
+  if (!out.length) add('甄選方式', [method], pg0);
+  return out;
+}
+function refHtml(app, p) {
+  if (!p) return '<aside class="s-ref" aria-label="簡章"><div class="col-h">簡章</div><p class="ref">這間沒有簡章資料</p></aside>';
+  loadText(p.code);
+  const blocks = refBlocks(app, p, stageOf(app));
+  const body = b => {
+    const k = b.more ? b.more + ':' + app.id : '', open = k && ST.refOpen.has(k), cut = b.more && b.lines.length > 4 && !open;
+    return `${(cut ? b.lines.slice(0, 4) : b.lines).map(l => `<p>${l.html || esc(l)}</p>`).join('')}${b.more && b.lines.length > 4 ? `<button class="link" type="button" data-ref-open="${esc(b.more)}" aria-expanded="${!!open}">${open ? '收起' : '展開'}</button>` : ''}`;
+  };
+  return `<aside class="s-ref" aria-label="簡章"><div class="col-h">簡章</div>${blocks.length ? `<dl class="s-rl">${blocks.map(b => `<dt>${esc(b.k)}</dt><dd>${body(b)}</dd><span class="s-pg">${pg(app, b.page)}</span>`).join('')}</dl>` : ''}</aside>`;
+}
+
+/* ---------- 列印這一間 ---------- */
+function printOne(app) {
+  const p = programOf(app), rows = timelineOf(app), fields = recFields(app, p).filter(f => f.value);
+  const seen = new Set(), blocks = p ? ['prep', 'applied', 'admitted'].flatMap(s => refBlocks(app, p, s)).filter(b => !seen.has(b.k) && seen.add(b.k)) : [];
+  const time = r => r.mail === 'postmark' ? '郵戳為憑' : r.mail === 'arrive' ? `${r.time ? r.time + ' ' : ''}前寄達` : r.time || '';
+  $('#print').innerHTML = `<div class="sp">
+    <h1>${esc(app.school)} ${esc(app.dept || '')}</h1>
+    <div class="pmeta">${esc(mdw(today()))} 列印・${esc(statusOf(app))}${linksOf(app).apply ? '・報名系統 ' + esc(linksOf(app).apply) : ''}</div>
+    <h2>時程</h2>
+    <table><tbody>${rows.map(r => `<tr${r.past ? ' class="sp-past"' : ''}><td class="sp-d">${esc(L.fmtDate(r.date))}</td><td class="sp-t">${esc(time(r))}</td><td>${esc(r.label)}${[r.note, r.clash && r.clash.length ? '同天：' + names(r.clash) : ''].filter(Boolean).map(x => ` <small>${esc(x)}</small>`).join('')}</td></tr>`).join('')}</tbody></table>
+    <div class="sp-cols">
+      <div><h2>備審</h2><ul class="sp-docs">${(app.docs || []).map(d => `<li>${d.done ? '☑' : '☐'} ${esc(d.name)}${d.opt ? '（選繳）' : ''}${docDesc(d) ? `<br><small>${esc(docDesc(d))}</small>` : ''}</li>`).join('') || '<li>—</li>'}</ul></div>
+      <div>${fields.length ? `<h2>紀錄</h2><dl class="sp-dl">${fields.map(f => `<dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd>`).join('')}</dl>` : ''}</div>
     </div>
-    <ol class="stepper" id="sh-stepper">${stepperHtml()}</ol>
-    <div class="next" id="sh-next">${nextHtml()}</div>
-    <div class="sections scroll" id="sh-secs">${SECS.map(([k, label]) => `<section class="sec ${open.has(k) ? 'open' : ''}" data-sec="${k}">
-      <button class="sec-h" type="button" data-toggle="${k}">${icon('chevron', 'icon chev')}<span>${label}</span><span class="sum" id="sum-${k}">${summary(k)}</span></button>
-      <div class="sec-b">${body(k)}</div>
-    </section>`).join('')}</div>`;
+    ${blocks.length ? `<h2>簡章</h2><dl class="sp-dl">${blocks.map(b => `<dt>${esc(b.k)}</dt><dd>${b.lines.map(l => esc(l.text || l)).join('<br>')}${b.page ? ` <small>p.${esc(b.page)}</small>` : ''}</dd>`).join('')}</dl>` : ''}
+  </div>`;
+  window.print();
 }
-// 不重建輸入欄位，只更新標題、狀態、步驟、下一步、各段摘要。
-function renderSheetMeta() {
-  if (!cur || !$('#sh-stepper')) return;
-  $('#sh-name').textContent = cur.school || '新學校';
-  $('#sh-state').innerHTML = stateHtml(cur);
-  $('#sh-dept').textContent = cur.dept || '在「基本資料」填學系';
-  $('#sh-links').innerHTML = links(cur);
-  $('#sh-stepper').innerHTML = stepperHtml();
-  $('#sh-next').innerHTML = nextHtml();
-  for (const [k] of SECS) { const el = $(`#sum-${k}`); if (el) el.innerHTML = summary(k); }
-}
-const STEPS = [['prep', '準備中'], ['applied', '已報名'], ['interview', '通過一階'], ['waiting', '已面試'], ['result', '結果']];
-const stepIndex = st => ({prep: 0, skipped: 0, applied: 1, interview: 2, waiting: 3, admitted: 4, waitlist: 4, rejected: 4, out: 2})[st] ?? 0;
-function stepperHtml() {
-  const idx = stepIndex(cur.status);
-  const resultLabel = {admitted: '正取', waitlist: cur.waitNo ? `備取 ${cur.waitNo}` : '備取', rejected: '未錄取'}[cur.status];
-  return STEPS.map(([key, label], i) => {
-    let cls = i < idx ? 'done' : i === idx ? 'now' : '', text = label;
-    if (i === 0 && cur.status === 'skipped') { cls = 'now bad'; text = '沒有報名'; }
-    if (i === 2 && cur.status === 'out') { cls = 'now bad'; text = '一階未通過'; }
-    if (i === 4 && resultLabel) { text = resultLabel; cls += cur.status === 'admitted' ? ' ok' : cur.status === 'waitlist' ? ' warn' : ' bad'; }
-    return `<li class="${cls}"><button type="button" data-step="${key}">${text}</button></li>`;
-  }).join('');
-}
-function nextHtml() {
-  const n = pickResult
-    ? {text: '放榜了嗎？選結果：', actions: [{label: '正取', set: {status: 'admitted'}}, {label: '備取', set: {status: 'waitlist'}}, {label: '未錄取', set: {status: 'rejected'}}, {label: '一階未通過', set: {status: 'out'}}, {label: '還沒放榜', cancel: true}]}
-    : nextStep(cur);
-  const box = $('#sh-next');
-  if (box) { box.className = 'next' + (n.tone ? ' ' + n.tone : ''); box._actions = n.actions; }
-  return `<span class="next-text">${esc(n.text)}</span><span class="next-acts">
-    ${n.wait ? `<label class="check">備取第 <input type="number" min="1" id="sh-wait" value="${esc(cur.waitNo ?? '')}" aria-label="備取名次"> 名</label>` : ''}
-    ${n.check ? `<label class="check"><input type="checkbox" data-check="${n.check[0]}" ${cur[n.check[0]] ? 'checked' : ''}>${n.check[1]}</label>` : ''}
-    ${n.actions.map((x, i) => x.href ? `<a class="btn sm ext" href="${esc(x.href)}" target="_blank" rel="noopener">${x.label}</a>` : `<button class="btn sm ${x.primary ? 'fill' : ''}" type="button" data-act="${i}">${x.label}</button>`).join('')}</span>`;
-}
-const ivDate = () => cur.dates.find(d => ['interview', 'exam', 'window'].includes(d.kind) && isKey(d.date) && (d.end || d.date) >= todayKey()) || cur.dates.find(d => ['interview', 'exam', 'window'].includes(d.kind)) || null;
-function summary(k) {
-  const t = todayKey();
-  switch (k) {
-    case 'reg': {
-      const reg = firstDate(cur, ['reg']), up = firstDate(cur, ['upload', 'letter', 'pay']);
-      const stepsDone = cur.regSteps.filter(x => x.done).length;
-      const steps = cur.regSteps.length && ['prep', 'applied'].includes(cur.status) ? `<span class="${stepsDone === cur.regSteps.length ? 'ok' : ''}">步驟 ${stepsDone}/${cur.regSteps.length}</span>` : '';
-      if (!reg && !cur.dates.length) return [steps, '還沒有日期'].filter(Boolean).join('・');
-      const parts = [];
-      if (reg) parts.push(reg.date >= t ? `<span class="${diffDays(reg.date) <= 3 ? 'hot' : ''}">報名截止 ${whenText(reg)}（${cdText(diffDays(reg.date))}）</span>` : `報名已截止 ${whenText(reg)}`);
-      if (up && up.date >= t) parts.push(`${KINDS[up.kind].label} ${whenText(up)}`);
-      if (steps) parts.push(steps);
-      return parts.join('・') || `${cur.dates.length} 個日期`;
-    }
-    case 'docs': {
-      const done = cur.docs.filter(d => d.done).length, due = firstDate(cur, ['upload', 'letter']) || firstDate(cur, ['reg']);
-      if (!cur.docs.length) return '沒有項目';
-      return `<span class="${done === cur.docs.length ? 'ok' : ''}">${done}/${cur.docs.length} 完成</span>${due && due.date >= t && done < cur.docs.length ? `・${KINDS[due.kind].label} ${whenText(due)}` : ''}`;
-    }
-    case 'interview': {
-      const iv = ivDate();
-      if (cur.ivSkip) return '標記不參加';
-      return iv && isKey(iv.date) ? `${KINDS[iv.kind].label} ${whenText(iv)}${cur.place ? '・' + esc(cur.place) : ''}` : '還沒有面試日期';
-    }
-    case 'result': {
-      const rel = firstDate(cur, ['release']);
-      const st = STATUS[cur.status];
-      if (['admitted', 'waitlist', 'rejected', 'out'].includes(cur.status)) return stateHtml(cur);
-      return rel ? `放榜 ${whenText(rel)}` : '還沒有放榜日期';
-    }
-    case 'brochure': return cur.programId ? '報名資格・甄選方式・要繳的資料' : '沒有連到簡章';
-    case 'info': return [cur.fee != null && `報名費 ${fmtMoney(cur.fee)}`, cur.quota != null && `名額 ${cur.quota}`, (cur.methods || []).join('、')].filter(Boolean).join('・');
-  }
-  return '';
-}
-const kindOpts = sel => Object.entries(KINDS).filter(([k]) => k !== 'open').map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v.label}</option>`).join('');
-function gcalUrl(d) {
-  const ymd = k => k.replace(/-/g, '');
-  let dates, tz = '';
-  if (/^\d{2}:\d{2}$/.test(d.time || '')) { const [h, mi] = d.time.split(':').map(Number); dates = `${ymd(d.date)}T${String(h).padStart(2, '0')}${String(mi).padStart(2, '0')}00/${ymd(d.date)}T${String(Math.min(h + 1, 23)).padStart(2, '0')}${String(mi).padStart(2, '0')}00`; tz = '&ctz=Asia/Taipei'; }
-  else { const e = new Date(d.end || d.date); e.setDate(e.getDate() + 1); dates = `${ymd(d.date)}/${ymd(e.toISOString().slice(0, 10))}`; }
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`${appName(cur)}｜${KINDS[d.kind].label}`)}&dates=${dates}${tz}&details=${encodeURIComponent(d.note || '')}${cur.place ? '&location=' + encodeURIComponent(cur.place) : ''}`;
-}
-function body(k) {
-  const t = todayKey();
-  switch (k) {
-    case 'reg': return `<div class="two" style="margin-bottom:12px">
-        <div class="field"><label>報名步驟</label><div class="list-col" id="sh-regsteps">${cur.regSteps.map(x => `<label class="check ${x.done ? 'done' : ''}"><input type="checkbox" data-regstep="${esc(x.id)}" ${x.done ? 'checked' : ''}>${esc(x.name)}</label>`).join('')}</div></div>
-        <div class="field"><label for="i-regno">報名序號／准考證號</label><input type="text" id="i-regno" value="${esc(cur.regNo || '')}" placeholder="放榜只公布准考證號，記下來才找得到自己" autocomplete="off"><span class="small muted">報名系統的登入帳號、繳費帳號也可以記在「基本資料」的筆記</span></div>
-      </div>
-      <div class="quiet" id="sh-dates">${cur.dates.length ? cur.dates.map(d => dateRow(d, t)).join('') : '<div class="small muted">還沒有日期</div>'}</div>
-      <div class="sec-tools"><button class="btn sm" type="button" id="sh-add-date">＋ 新增日期</button></div>`;
-    case 'docs': {
-      const p = cur.programId && P.byId.get(cur.programId);
-      return `<div class="quiet" id="sh-docs">${cur.docs.length ? cur.docs.map(docRow).join('') : '<div class="small muted">沒有項目</div>'}</div>
-      <div class="sec-tools"><button class="btn sm" type="button" id="sh-add-doc">＋ 新增項目</button><span class="small muted">到「備審」分頁可以一次看所有學校</span></div>
-      ${p && p.fmt ? `<div class="p-sec" style="margin-top:14px"><h4>格式規定<span class="src">簡章節錄，上傳前對照一次</span></h4><ul class="hint-q">${p.fmt.map(s => `<li>・${esc(s)}</li>`).join('')}</ul></div>` : ''}`;
-    }
-    case 'interview': {
-      const iv = ivDate(), p = cur.programId && P.byId.get(cur.programId);
-      const w = p && (p.it || []).filter(i => i[0]).map(([n, wt]) => n + (wt != null ? ` ${wt}%` : '')).join('、');
-      return `<div class="iv-top">
-          <div class="field"><label>面試日期</label>${iv ? `<div class="row" style="display:flex;gap:6px"><input type="date" data-ivf="date" value="${esc(iv.date)}" aria-label="面試日期"><input type="time" data-ivf="time" value="${esc(iv.time)}" aria-label="面試時間" style="width:110px"></div>` : '<button class="btn sm" type="button" id="sh-add-iv">加面試日期</button>'}</div>
-          <div class="field"><label for="i-place">地點</label><div style="display:flex;gap:6px"><input type="text" id="i-place" value="${esc(cur.place || '')}" placeholder="例如：資訊館 2 樓" autocomplete="off">${cur.place ? `<a class="btn sm ext" href="https://www.google.com/maps/search/${encodeURIComponent(cur.school + ' ' + cur.place)}" target="_blank" rel="noopener">地圖</a>` : ''}</div></div>
-          <div class="field"><span class="label">這場</span><div class="seg"><button type="button" data-ivskip="0" aria-pressed="${!cur.ivSkip}">會去</button><button type="button" data-ivskip="1" aria-pressed="${!!cur.ivSkip}">不參加</button></div></div>
-        </div>
-        ${w ? `<p class="small sub" style="margin-bottom:10px">甄選：${esc(w)}</p>` : ''}
-        ${p && p.ivn ? `<div class="p-sec"><h4>簡章提到<span class="src">自動節錄，請對照簡章</span></h4><ul class="hint-q">${p.ivn.map(s => `<li>・${esc(s)}</li>`).join('')}</ul></div>` : ''}
-        <div class="two">
-          <div class="field"><label>當天要帶</label><div class="kit" id="sh-kit">${cur.kit.map(x => `<label class="check ${x.done ? 'done' : ''}"><input type="checkbox" data-kit="${esc(x.id)}" ${x.done ? 'checked' : ''}>${esc(x.name)}</label>`).join('')}<button class="link" type="button" id="sh-add-kit">＋ 加一項</button></div></div>
-          <div class="field"><label>常被問的問題</label><ul class="hint-q">${COMMON_QUESTIONS.map(q => `<li>・${esc(q)}</li>`).join('')}</ul></div>
-          <div class="field"><label for="i-prep">準備重點</label><textarea id="i-prep" rows="7" placeholder="自我介紹怎麼講、作品要怎麼說、想強調的經歷…">${esc(cur.prep || '')}</textarea></div>
-          <div class="field"><label for="i-asked">面試後紀錄</label><textarea id="i-asked" rows="7" placeholder="被問了什麼、答得如何、下一場要調整什麼">${esc(cur.asked || '')}</textarea></div>
-        </div>`;
-    }
-    case 'result': {
-      const rel = firstDate(cur, ['release']), cf = firstDate(cur, ['confirm']), g = firstDate(cur, ['giveup']), wt = firstDate(cur, ['wait']);
-      const R = [['admitted', '正取'], ['waitlist', '備取'], ['rejected', '未錄取'], ['out', '一階未通過']];
-      return `<div class="result-row"><span class="small sub">放榜 ${rel ? whenText(rel) : '（沒有日期）'}</span><div class="seg">${R.map(([v, l]) => `<button type="button" data-result="${v}" aria-pressed="${cur.status === v}">${l}</button>`).join('')}</div>
-        ${cur.status === 'waitlist' ? `<label class="check">備取第 <input type="number" min="1" id="sh-wait2" value="${esc(cur.waitNo ?? '')}" style="width:64px;height:28px"> 名</label>` : ''}</div>
-        <dl class="kv" style="margin-top:12px">
-          ${cf ? `<dt>報到截止</dt><dd>${whenText(cf)}${cf.note ? ` · ${esc(cf.note)}` : ''}</dd>` : ''}
-          ${g ? `<dt>放棄截止</dt><dd>${whenText(g)}${g.note ? ` · ${esc(g.note)}` : ''}</dd>` : ''}
-          ${wt ? `<dt>備取遞補</dt><dd>${whenText(wt)}${wt.note ? ` · ${esc(wt.note)}` : ''}</dd>` : ''}
-        </dl>
-        ${cur.status === 'waitlist' ? `<div class="field" style="margin-top:12px"><label>遞補紀錄</label><div class="waitlog" id="sh-waitlog">${cur.waitLog.map(x => `<span>${esc(fmtDate(x.date))} 遞補到第 ${esc(x.rank)} 名${x.note ? '・' + esc(x.note) : ''} <button class="link" type="button" data-del-wait="${esc(x.id)}">✕</button></span>`).join('')}</div>
-          <form class="row" id="sh-wait-add" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><input type="date" id="wl-date" value="${t}" aria-label="日期"><input type="number" id="wl-rank" min="1" placeholder="遞補到第幾名" style="width:140px"><input type="text" id="wl-note" placeholder="備註（公告、電話通知…）" style="flex:1;min-width:160px"><button class="btn sm" type="submit">記一筆</button></form></div>` : ''}`;
-    }
-    case 'brochure': {
-      const p = cur.programId && P.byId.get(cur.programId);
-      if (!p) return '<div class="small muted">這筆紀錄沒有連到簡章資料。用「新增學校」從清單選學校和系，就會自動連結。</div>';
-      const its = (p.it || []).filter(i => i[0]);
-      const hasW = its.some(i => i[1] != null), total = hasW ? its.reduce((s, i) => s + (i[1] || 0), 0) || 1 : its.length;
-      const facts = [['報名費', p.fee], ['減免', p.fr], ['推薦信', p.rl ? rlText(p.rl) + (p.rld && p.rl !== 'N' ? `（${fmtDate(p.rld)} 前）` : '') : ''], ['作品集', p.pf === 'Y' ? '需要' + (p.pfd ? `（${fmtDate(p.pfd)} 前）` : '') : p.pf === 'N' ? '不需要' : ''], ['同校可報', p.mx && p.mx !== 'X' ? p.mx : ''], ['優先錄取', p.pr && p.pr !== 'N' ? p.pr.replace(/^Y\//, '') : ''], ['考試地點', p.loc], ['諮詢', [p.ph, p.em, p.ct].filter(Boolean).join('・')]].filter(([, v]) => v);
-      return `<div class="p-sec"><h4>報名資格${p.qxp ? `<span class="src">簡章第 ${p.qxp} 頁</span>` : ''}</h4><p class="qual">${esc(p.qx || p.tgt || '沒有找到，請看簡章原文。')}</p></div>
-        ${its.length ? `<div class="p-sec"><h4>甄選方式</h4><div class="weight"><div class="wbar">${its.map(([n, w]) => `<i class="w-${itemClass(n)}" style="width:${((hasW ? (w || 0) : 1) / total * 100).toFixed(1)}%"></i>`).join('')}</div><div class="witems">${its.map(([n, w, st]) => `<span><i class="w-${itemClass(n)}"></i>${esc(n)}${w != null ? ` ${w}%` : ''}${st ? `（${esc(st)}）` : ''}</span>`).join('')}</div></div></div>` : ''}
-        ${docListHtml(p)}
-        ${facts.length ? `<dl class="kv">${facts.map(([k2, v]) => `<dt>${k2}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-        ${p.cw ? `<div class="p-sec" style="margin-top:12px"><h4>報到與遞補</h4><p class="small sub">${esc(p.cw)}</p></div>` : ''}
-        <div class="sec-tools"><button class="btn sm" type="button" data-view-prog>看簡章原文</button></div>`;
-    }
-    case 'info': return `<div class="info-grid">
-        <div class="field"><label for="i-school">學校</label><input id="i-school" list="school-names" value="${esc(cur.school || '')}" autocomplete="off" placeholder="例如：輔仁大學"></div>
-        <div class="field"><label for="i-dept">學系／組別</label><input id="i-dept" value="${esc(cur.dept || '')}" autocomplete="off" placeholder="例如：資訊工程學系"></div>
-        <div class="field"><label for="i-fee">報名費（元）</label><input id="i-fee" type="number" min="0" value="${esc(cur.fee ?? '')}"></div>
-        <div class="field"><label for="i-quota">招生名額</label><input id="i-quota" type="number" min="0" value="${esc(cur.quota ?? '')}"></div>
-        <div class="field span"><span class="label">甄選方式</span><div class="kit">${METHODS.map((m, i) => `<label class="check"><input type="checkbox" data-method="${esc(m)}" ${(cur.methods || []).includes(m) ? 'checked' : ''}>${esc(m)}</label>`).join('')}</div></div>
-        <div class="field span"><label for="i-url">系所網站或簡章網址</label><input id="i-url" type="url" value="${esc(cur.url || '')}" placeholder="https://" autocomplete="off"></div>
-        <div class="field span"><label for="i-notes">筆記</label><textarea id="i-notes" rows="4" placeholder="承辦窗口、系所特色、想強調的經歷…">${esc(cur.notes || '')}</textarea></div>
-        <div class="field span"><label>顏色</label><div class="kit">${Array.from({length: 10}, (_, i) => `<button class="icon-btn" type="button" data-color="${i}" aria-label="顏色 ${i + 1}" style="${i === (cur.color ?? -1) ? 'outline:2px solid var(--ink);outline-offset:1px' : ''}"><span class="dot" style="background:var(--c${i});width:14px;height:14px"></span></button>`).join('')}</div></div>
-      </div>
-      <datalist id="school-names">${P.schools.map(s => `<option value="${esc(s.name)}"></option>`).join('')}</datalist>`;
-  }
-  return '';
-}
-const dateRow = (d, t) => `<div class="date-row ${isKey(d.date) && (d.end || d.date) < t ? 'past' : ''}" data-id="${esc(d.id)}">
-  <select data-f="kind" aria-label="類型">${kindOpts(d.kind)}</select>
-  <input type="date" data-f="date" value="${esc(d.date)}" aria-label="日期">
-  <input type="time" data-f="time" value="${esc(d.time)}" aria-label="時間">
-  <input type="text" data-f="note" value="${esc(d.note)}" placeholder="備註" aria-label="備註">
-  ${isKey(d.date) && (d.end || d.date) >= t ? `<a class="gcal" href="${gcalUrl(d)}" target="_blank" rel="noopener" title="加到 Google 日曆">${icon('calendar')}</a>` : '<span></span>'}
-  <button class="icon-btn" type="button" data-del-date="${esc(d.id)}" aria-label="刪除">✕</button>
-</div>`;
-const docRow = d => `<div class="doc-row ${d.done ? 'done' : ''}" data-id="${esc(d.id)}"><input type="checkbox" data-f="done" ${d.done ? 'checked' : ''} aria-label="完成"><input type="text" data-f="name" value="${esc(d.name)}" placeholder="項目名稱" aria-label="項目名稱"><button class="icon-btn" type="button" data-del-doc="${esc(d.id)}" aria-label="刪除">✕</button></div>`;
 
-/* ---------- 儲存 ---------- */
-function setSave(id, state) {
-  if (!cur || cur.id !== id) return;
-  const el = $('#sh-save'); if (!el) return;
-  el.classList.toggle('err', state === 'error');
-  el.textContent = {saving: '儲存中…', saved: '已儲存', error: '儲存失敗'}[state] || '';
+/* ---------- 選單：狀態、⋯、顏色 ---------- */
+// 回答、改狀態都給「復原」；提示寫新的狀態字（有變的話）
+// focus：重畫後游標放哪裡（按下的按鈕通常跟著那一列消失，所以預設放回「下一步」）
+function doAction(app, a, payload, focus = '.s-next') {
+  ST.ask = null; ST.focus = focus;
+  const pl = payload !== undefined ? payload : a.payload || {};
+  const msg = actionToast(app, a.id, pl);
+  if (!msg) return;
+  if (a.also && a.also.length) mutateMany([[app.id, x => L.applyAction(x, a.id, pl, actx(x))], ...a.also.map(o => [o.appId, x => L.applyAction(x, o.id, o.payload || {}, actx(x))])], {toast: msg});
+  else act(app.id, a.id, pl, {toast: msg});
 }
-saveHooks.state = setSave;
-const commitSoon = debounce(() => commit(), 450);
-function commit() {
-  if (!cur || !cur.school.trim()) return;
-  delete cur.example;
-  const body = clone(cur);
-  body.school = body.school.trim(); body.dept = (body.dept || '').trim();
-  upsertApp(body);
+function statusMenu(btn, app) {
+  const w = statusOf(app), ENDED = ['rejected', 'out', 'skipped'];
+  const now_ = app.giveupDone ? 'gaveup' : app.status === 'admitted' && app.confirmDone ? 'held' : app.choice === 'decline' && !ENDED.includes(app.status) ? 'declined'
+    : L.STATUS.find(k => L.STATUS_LABEL[k] === w) || (w.startsWith('備取') ? 'waitlist' : app.status);
+  const items = [...L.STATUS.map(k => ({id: k, label: L.STATUS_LABEL[k], checked: now_ === k})), '-', ...[['held', '已報到'], ['gaveup', '已放棄'], ['declined', '不去']].map(([id, label]) => ({id, label, checked: now_ === id}))];
+  popMenu(btn, items, (id, it) => { if (id !== now_) doAction(cur() || app, {id: 'setStatus', label: it.label}, {status: id}, '[data-status]'); });
 }
-function applyStatus(patch) {
-  Object.assign(cur, patch);
-  if (patch.choice === 'attend') for (const a of S.apps) if (a.id !== cur.id && a.choice === 'attend') upsertApp({...clone(a), choice: ''});
-  if (patch.status && !['admitted', 'waitlist'].includes(patch.status)) cur.choice = '';
-  pickResult = false;
-  if (patch.status) { const s = openSet(cur); s.clear(); s.add(defaultSec(cur)); }
-  commit();
-  renderSheet();
+function moreMenu(btn, app) {
+  popMenu(btn, [{id: 'color', label: '顏色'}, {id: 'print', label: '列印這一間'}, '-', {id: 'del', label: '刪除這間學校', danger: true}], id => {
+    if (id === 'color') colorMenu(btn, app);
+    else if (id === 'print') printOne(cur() || app);
+    else if (id === 'del') removeApp(app.id);
+  });
 }
-function disarmDelete() { delArmed = false; clearTimeout(delTimer); const b = $('#sh-delete'); if (b) { b.classList.remove('armed'); b.textContent = '刪除這間學校'; } }
-const refreshSec = k => { const el = $(`#sheet .sec[data-sec="${k}"] .sec-b`); if (el) el.innerHTML = body(k); };
+function colorMenu(btn, app) {
+  const c = colourOf(app);
+  const items = Array.from({length: PALETTE}, (_, i) => {
+    const others = S.apps.filter(a => a.id !== app.id && colourOf(a) === i).map(shortName);
+    return {id: i, checked: i === c, html: `<span class="dot" style="--hue:var(--c${i})"></span><span class="sch" style="--hue:var(--c${i})">${esc(shortName(app))}</span>${others.length ? `<span class="s-cm">${esc(others.join('、'))}</span>` : ''}`};
+  });
+  popMenu(btn, items, i => { if (i !== c) act(app.id, 'setColor', {color: i}); });
+}
 
-/* ---------- 事件 ---------- */
-export function wireSchools() {
-  $('#rail').addEventListener('click', e => { const b = e.target.closest('[data-app]'); if (b) selectSchool(b.dataset.app); });
-  $('#rail-add').addEventListener('click', () => document.dispatchEvent(new CustomEvent('open-wizard')));
-  const sheet = $('#sheet');
-  document.addEventListener('click', e => { if (!e.target.closest('#sh-menu')) { const m = $('#sh-menu'); if (m) m.classList.remove('open'); } });
-  sheet.addEventListener('click', e => {
-    if (!cur) return;
-    if (e.target.closest('[data-menu]')) { $('#sh-menu').classList.toggle('open'); return; }
-    const tog = e.target.closest('[data-toggle]');
-    if (tog) { const s = openSet(cur), k = tog.dataset.toggle; s.has(k) ? s.delete(k) : s.add(k); tog.closest('.sec').classList.toggle('open', s.has(k)); return; }
-    const os = e.target.closest('[data-open-sec]');
-    if (os) { openSet(cur).add(os.dataset.openSec); $(`#sheet .sec[data-sec="${os.dataset.openSec}"]`).classList.add('open'); $('#sh-menu').classList.remove('open'); return; }
-    if (e.target.closest('[data-view-prog]')) { go('finder', {id: cur.programId}); return; }
-    if (e.target.closest('[data-reset-dates]')) {
-      $('#sh-menu').classList.remove('open');
-      const p = cur.programId && P.byId.get(cur.programId);
-      if (!p) return;
-      if (!confirm('把這間學校的日期換成簡章目前的日期？你自己改過或加的日期會被蓋掉。')) return;
-      cur.dates = programDates(p).sort((x, y) => (x.date || '9').localeCompare(y.date || '9'));
-      commit(); renderSheet(); toast('已用簡章日期重設');
-      return;
-    }
-    if (e.target.closest('[data-print-one]')) { document.dispatchEvent(new CustomEvent('print-one', {detail: cur.id})); $('#sh-menu').classList.remove('open'); return; }
-    const step = e.target.closest('[data-step]');
-    if (step) { if (step.dataset.step === 'result') { pickResult = true; openSet(cur).add('result'); renderSheet(); } else applyStatus({status: step.dataset.step}); return; }
-    const act = e.target.closest('[data-act]');
-    if (act) {
-      const x = $('#sh-next')._actions[Number(act.dataset.act)];
-      if (!x) return;
-      if (x.cancel) { pickResult = false; $('#sh-next').innerHTML = nextHtml(); return; }
-      if (x.tab) { openSet(cur).add(x.tab); $(`#sheet .sec[data-sec="${x.tab}"]`).classList.add('open'); $(`#sheet .sec[data-sec="${x.tab}"]`).scrollIntoView({block: 'nearest'}); return; }
-      applyStatus(x.set); return;
-    }
-    const res = e.target.closest('[data-result]');
-    if (res) { applyStatus({status: res.dataset.result}); return; }
-    const skip = e.target.closest('[data-ivskip]');
-    if (skip) { cur.ivSkip = skip.dataset.ivskip === '1'; commit(); refreshSec('interview'); return; }
-    const col = e.target.closest('[data-color]');
-    if (col) { cur.color = Number(col.dataset.color); commit(); refreshSec('info'); renderSheetMeta(); return; }
-    if (e.target.closest('#sh-add-date')) { cur.dates.push({id: uid(), kind: 'interview', date: '', end: '', time: '', note: ''}); refreshSec('reg'); const rows = $$('#sh-dates .date-row'); $('input[type="date"]', rows[rows.length - 1]).focus(); return; }
-    if (e.target.closest('#sh-add-iv')) { cur.dates.push({id: uid(), kind: 'interview', date: '', end: '', time: '', note: '面試'}); refreshSec('interview'); refreshSec('reg'); return; }
-    const dd = e.target.closest('[data-del-date]');
-    if (dd) { cur.dates = cur.dates.filter(d => d.id !== dd.dataset.delDate); commit(); refreshSec('reg'); renderSheetMeta(); return; }
-    if (e.target.closest('#sh-add-doc')) { cur.docs.push({id: uid(), name: '', done: false}); refreshSec('docs'); const rows = $$('#sh-docs .doc-row'); $('input[type="text"]', rows[rows.length - 1]).focus(); return; }
-    const dc = e.target.closest('[data-del-doc]');
-    if (dc) { cur.docs = cur.docs.filter(d => d.id !== dc.dataset.delDoc); commit(); refreshSec('docs'); renderSheetMeta(); return; }
-    if (e.target.closest('#sh-add-kit')) { const n = prompt('要帶的東西'); if (n && n.trim()) { cur.kit.push({id: uid(), name: n.trim(), done: false}); commit(); refreshSec('interview'); } return; }
-    const dw = e.target.closest('[data-del-wait]');
-    if (dw) { cur.waitLog = cur.waitLog.filter(x => x.id !== dw.dataset.delWait); commit(); refreshSec('result'); return; }
-    if (e.target.closest('#sh-delete')) {
-      const b = $('#sh-delete');
-      if (!delArmed) { delArmed = true; b.classList.add('armed'); b.textContent = '確定刪除？'; delTimer = setTimeout(disarmDelete, 4000); return; }
-      const id = cur.id; disarmDelete(); cur = null; sv.id = null;
-      removeApp(id); toast('已刪除'); return;
-    }
-  });
-  sheet.addEventListener('input', e => {
-    if (!cur) return;
-    const t = e.target;
-    const row = t.closest('.date-row');
-    if (row) { const d = cur.dates.find(x => x.id === row.dataset.id); if (d) { d[t.dataset.f] = t.value; if (!composing(e)) commitSoon(); } return; }
-    const drow = t.closest('.doc-row');
-    if (drow && t.dataset.f === 'name') { const d = cur.docs.find(x => x.id === drow.dataset.id); if (d) { d.name = t.value; if (!composing(e)) commitSoon(); } return; }
-    if (t.dataset.ivf) { const iv = ivDate(); if (iv) { iv[t.dataset.ivf] = t.value; commitSoon(); } return; }
-    const map = {'i-school': 'school', 'i-dept': 'dept', 'i-url': 'url', 'i-notes': 'notes', 'i-prep': 'prep', 'i-asked': 'asked', 'i-place': 'place', 'i-regno': 'regNo'};
-    if (map[t.id]) { cur[map[t.id]] = t.value; if (t.id === 'i-school' || t.id === 'i-dept') renderSheetMeta(); if (!composing(e)) commitSoon(); return; }
-    if (t.id === 'i-fee') { cur.fee = numOrNull(t.value); commitSoon(); return; }
-    if (t.id === 'i-quota') { cur.quota = numOrNull(t.value); commitSoon(); return; }
-    if (t.id === 'sh-wait' || t.id === 'sh-wait2') { cur.waitNo = numOrNull(t.value); $('#sh-stepper').innerHTML = stepperHtml(); commitSoon(); }
-  });
-  sheet.addEventListener('compositionend', e => { if (cur && e.target.matches('input, textarea')) commitSoon(); });
-  sheet.addEventListener('change', e => {
-    if (!cur) return;
-    const t = e.target;
-    if (t.closest('.date-row') && ['kind', 'date', 'time'].includes(t.dataset.f)) { commitSoon.flush(); commit(); renderSheetMeta(); refreshSec('interview'); return; }
-    if (t.dataset.ivf) { commit(); renderSheetMeta(); refreshSec('reg'); return; }
-    const drow = t.closest('.doc-row');
-    if (drow && t.dataset.f === 'done') { const d = cur.docs.find(x => x.id === drow.dataset.id); if (d) { d.done = t.checked; drow.classList.toggle('done', d.done); commit(); renderSheetMeta(); } return; }
-    if (t.dataset.kit) { const x = cur.kit.find(k => k.id === t.dataset.kit); if (x) { x.done = t.checked; t.closest('.check').classList.toggle('done', x.done); commit(); } return; }
-    if (t.dataset.regstep) { const x = cur.regSteps.find(k => k.id === t.dataset.regstep); if (x) { x.done = t.checked; t.closest('.check').classList.toggle('done', x.done); commit(); renderSheetMeta(); } return; }
-    if (t.dataset.check) { cur[t.dataset.check] = t.checked; commit(); renderSheetMeta(); return; }
-    if (t.dataset.method) { cur.methods = $$('#sheet [data-method]:checked').map(i => i.dataset.method); commit(); renderSheetMeta(); return; }
-    if (t.id === 'i-place') { refreshSec('interview'); renderSheetMeta(); }
-  });
-  sheet.addEventListener('submit', e => {
-    if (e.target.id !== 'sh-wait-add') return;
-    e.preventDefault();
-    const date = $('#wl-date').value, rank = numOrNull($('#wl-rank').value);
-    if (!isKey(date) || !rank) { toast('請填日期和名次'); return; }
-    cur.waitLog.push({id: uid(), date, rank, note: $('#wl-note').value.trim()});
-    cur.waitNo = rank;
-    commit(); refreshSec('result'); renderSheetMeta();
-  });
+/* ---------- 事件（init 掛一次，委派） ---------- */
+function onClick(e) {
+  const t = e.target;
+  if (t.closest('[data-add-school]')) { add.open(); return; }
+  const app = cur();
+  if (!app) return;
+  let b;
+  if ((b = t.closest('[data-status]'))) return statusMenu(b, app);
+  if ((b = t.closest('[data-more]'))) return moreMenu(b, app);
+  if ((b = t.closest('[data-act]'))) {
+    const a = V.next && V.next.actions[Number(b.dataset.act)];
+    if (!a || a.disabled) return;
+    if (a.ask) { ST.ask = {key: V.next.key, id: a.id}; ST.focus = '.s-ask input, .s-ask [data-ask-ok]'; rerender(); return; }
+    return doAction(app, a);
+  }
+  if (t.closest('[data-ask-ok]')) { const a = askAction(); if (a) doAction(app, a); return; }
+  if (t.closest('[data-ask-cancel]')) { ST.ask = null; rerender(); return; }
+  if (t.closest('[data-all]')) { toggle(ST.all, app.id); rerender(); return; }
+  if (t.closest('[data-docs-open]')) { toggle(ST.docsOpen, app.id); rerender(); return; }
+  if ((b = t.closest('[data-ref-open]'))) { toggle(ST.refOpen, b.dataset.refOpen + ':' + app.id); rerender(); return; }
+  // 「改」表單裡的按鈕：先動草稿，儲存時才寫入
+  if ((b = t.closest('[data-sched-rm]'))) { D.del.add(b.dataset.schedRm); rerender(); return; }
+  if ((b = t.closest('[data-sched-add-rm]'))) { D.adds.splice(Number(b.dataset.schedAddRm), 1); rerender(); return; }
+  if ((b = t.closest('[data-sched-restore]'))) {
+    const id = b.dataset.schedRestore, d = (app.dates || []).find(x => x.id === id), f = b.closest('form');
+    if (!d || !d.bro) return;
+    const v = D.rows.get(id) || {label: (f.elements['l:' + id] || {}).value || ''};
+    D.rows.set(id, {...v, date: d.bro.date || '', time: d.bro.time || ''});
+    D.restore.add(id);
+    // 欄位數量沒變時 ui.js 會把重畫前的值放回去，所以先改畫面上的值
+    f.elements['d:' + id].value = d.bro.date || ''; f.elements['t:' + id].value = d.bro.time || '';
+    ST.focus = `[name="d:${CSS.escape(id)}"]`;
+    rerender(); return;
+  }
+  if (t.closest('[data-add-date]')) { D.adds.push({date: '', time: '', label: ''}); ST.focus = `[name="ad:${D.adds.length - 1}"]`; rerender(); return; }
+  if ((b = t.closest('[data-unhide]'))) { act(app.id, 'unhide', {ref: b.dataset.unhide}); return; }
+  if ((b = t.closest('[data-doc-rm]'))) { D.docDel.add(b.dataset.docRm); rerender(); return; }
+  if ((b = t.closest('[data-doc-add-rm]'))) { D.docAdds.splice(Number(b.dataset.docAddRm), 1); rerender(); return; }
+  if (t.closest('[data-doc-more]')) { D.docAdds.push(''); ST.focus = `[name="doc:${D.docAdds.length - 1}"]`; rerender(); return; }
+  if ((b = t.closest('[data-unhide-doc]'))) { act(app.id, 'unhideDoc', {ref: b.dataset.unhideDoc}); return; }
+}
+function onChange(e) {
+  const t = e.target, app = cur();
+  if (!app) return;
+  if (t.matches('[data-tick]')) {
+    const key = t.dataset.tick;
+    ST.focus = `[data-tick="${CSS.escape(key)}"]`;
+    // 勾完最後一個必要的部分（→ 已報名，或那一列做完）：給「復原」
+    act(app.id, 'tick', {key, done: t.checked}, {toast: tickToast(app, key, t.checked, V && V.next)});
+  } else if (t.matches('[data-doc]')) {
+    ST.focus = `[data-doc="${CSS.escape(t.dataset.doc)}"]`;
+    act(app.id, 'tickDoc', {docId: t.dataset.doc, done: t.checked});
+  }
+}
+function onInput(e) {
+  const t = e.target;
+  if (t.dataset.sf) {
+    const f = t.dataset.sf;
+    if (t.dataset.row) {
+      const id = t.dataset.row, form = t.form;
+      const v = D.rows.get(id) || {date: form.elements['d:' + id].value, time: form.elements['t:' + id].value, label: (form.elements['l:' + id] || {}).value || ''};
+      D.rows.set(id, {...v, [f]: t.value});
+    } else if (t.dataset.add != null && D.adds[Number(t.dataset.add)]) D.adds[Number(t.dataset.add)][f] = t.value;
+  } else if (t.dataset.docAdd != null) D.docAdds[Number(t.dataset.docAdd)] = t.value;
+  else if (t.closest('[data-ask-form]') && ST.ask) ST.ask[t.name] = t.value;
+}
+function onSubmit(e) {
+  const f = e.target.closest('[data-ask-form]');
+  if (!f) return;
+  e.preventDefault();
+  const a = askAction(), app = cur();
+  if (!a || !app) return;
+  if (a.ask.type === 'number') return doAction(app, a, {no: f.elements.no.value.trim()});
+  const date = f.elements.date.value, time = normTime(f.elements.time.value);
+  const err = (el, msg) => { el.classList.add('bad'); el.focus(); f.querySelector('[data-ask-err]').textContent = msg; };
+  if (!date) return err(f.elements.date, '日期要填');
+  if (time === null) return err(f.elements.time, '時間寫成 17:00');
+  doAction(app, a, {date, time});
+}
+
+export function init() {
+  const root = $('#view-schools');
+  root.addEventListener('click', onClick);
+  root.addEventListener('change', onChange);
+  root.addEventListener('input', onInput);
+  root.addEventListener('submit', onSubmit);
+  root.addEventListener('keydown', e => { if (e.key === 'Escape' && ST.ask && e.target.closest('.s-ask')) { e.stopPropagation(); ST.ask = null; rerender(); } });
+  onEditSave('sched', saveSched);
+  onEditSave('docs', saveDocs);
+  onEditSave('rec', saveRec);
+}
+
+/* ---------- 畫 ---------- */
+export function render(route) {
+  const root = $('#view-schools');
+  if (!S.apps.length) {
+    V = null; ST.id = '';
+    root.innerHTML = '<div class="s-none"><p class="empty">還沒有加學校。</p><button class="btn" type="button" data-add-school>＋ 加學校</button></div>';
+    return;
+  }
+  let app = route.id ? appById(route.id) : null;
+  // 網址的那間剛被刪掉（8 秒內可以復原）：先顯示別間，但不改網址，復原後就回來
+  if (!app) { app = pickDefault(); if (!route.id) setUrl({view: 'schools', id: app.id}); }
+  const fresh = app.id !== ST.id;
+  if (fresh) {
+    ST.id = app.id; ST.ask = null;
+    // 簡章更新的標記：打開時先記下來（這次看得到），然後標成看過（下次就不顯示）
+    ST.marks = {unseen: syncUnseen(app.id), list: syncMarks(app.id)};
+    ackSync(app.id);
+  }
+  if (!editKey()) D.key = '';
+  const p = programOf(app), ag = agendaNow(), first = new Map();
+  for (const r of ag.rows) if (!first.has(r.appId)) first.set(r.appId, r);
+  const n = first.get(app.id) || null;
+  if (ST.ask && (!n || n.key !== ST.ask.key)) ST.ask = null;
+  V = {app, p, next: n};
+  const cols = $('.s-cols', root), rail = $('.s-rail', root);
+  const top = !fresh && cols ? cols.scrollTop : 0, railTop = rail ? rail.scrollTop : 0;
+  root.innerHTML = `${railHtml(app.id, first)}<div class="s-page">${headHtml(app, p)}${nextHtml(app, n)}
+    <div class="s-cols scroll"><div class="s-mine"><div class="col-h">我的</div>${schedHtml(app)}${docsHtml(app)}${recHtml(app)}</div>${refHtml(app, p)}</div></div>`;
+  if (top) $('.s-cols', root).scrollTop = top;
+  if (railTop) $('.s-rail', root).scrollTop = railTop;
+  // 打勾、回答之後那個元素可能已經不見了（那一列做完）：游標放回「下一步」，不要掉到頁首
+  if (ST.focus) { const el = root.querySelector(ST.focus) || (ST.focus.startsWith('[data-tick') ? root.querySelector('.s-next') : null); ST.focus = ''; if (el) el.focus({preventScroll: true}); }
 }

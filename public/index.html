@@ -3,125 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>我的特選紀錄</title>
+<title>特選</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="特選">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%231c1b19%22/%3E%3Ctext x=%2216%22 y=%2222%22 font-size=%2216%22 font-family=%22-apple-system,PingFang TC,sans-serif%22 font-weight=%22600%22 text-anchor=%22middle%22 fill=%22%23faf8f4%22%3E特%3C/text%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 180 180%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%231c1b19%22/%3E%3Ctext x=%2290%22 y=%22122%22 font-size=%2290%22 font-family=%22-apple-system,PingFang TC,sans-serif%22 font-weight=%22600%22 text-anchor=%22middle%22 fill=%22%23faf8f4%22%3E特%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="css/next.css">
+<link rel="stylesheet" href="css/schools.css">
+<link rel="stylesheet" href="css/calendar.css">
+<link rel="stylesheet" href="css/add.css">
+<link rel="stylesheet" href="css/settings.css">
 <!-- 一次把所有模組一起下載，不用等 app.js 載完才發現還要下載哪些 -->
 <link rel="modulepreload" href="js/app.js">
 <link rel="modulepreload" href="js/core.js">
+<link rel="modulepreload" href="js/logic.js">
 <link rel="modulepreload" href="js/router.js">
 <link rel="modulepreload" href="js/ui.js">
-<link rel="modulepreload" href="js/home.js">
+<link rel="modulepreload" href="js/next.js">
 <link rel="modulepreload" href="js/schools.js">
-<link rel="modulepreload" href="js/docs.js">
 <link rel="modulepreload" href="js/calendar.js">
-<link rel="modulepreload" href="js/finder.js">
-<link rel="modulepreload" href="js/wizard.js">
+<link rel="modulepreload" href="js/add.js">
 <link rel="modulepreload" href="js/settings.js">
-<script>try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
+<!-- 配色：預設跟著系統；設定裡選了淺色／深色就記在這台電腦（?theme= 給測試用） -->
+<script>try { const t = new URLSearchParams(location.search).get('theme') || localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
 <body>
 
 <header class="nav">
-  <div class="brand"><span class="mark" aria-hidden="true">特</span><span class="brand-name">我的特選紀錄</span><span class="brand-year" id="brand-year"></span></div>
+  <a class="brand" href="#next"><span class="mark" aria-hidden="true">特</span><span class="brand-name">我的特選紀錄</span><span class="brand-year" id="brand-year">116 學年度</span></a>
   <nav class="tabs" id="tabs" aria-label="畫面">
-    <button type="button" role="tab" data-view="week">本週</button>
-    <button type="button" role="tab" data-view="schools">學校</button>
-    <button type="button" role="tab" data-view="docs">備審</button>
-    <button type="button" role="tab" data-view="calendar">行事曆</button>
-    <button type="button" role="tab" data-view="finder">找科系</button>
+    <a href="#next" data-view="next">接下來</a>
+    <a href="#schools" data-view="schools">學校</a>
+    <a href="#calendar" data-view="calendar">行事曆</a>
   </nav>
   <div class="nav-actions">
-    <button class="btn ghost" type="button" id="btn-settings"></button>
-    <button class="btn fill" type="button" id="btn-add">＋ 新增學校</button>
+    <button class="btn quiet" type="button" id="btn-settings">設定</button>
+    <button class="btn add" type="button" id="btn-add">＋ 加學校</button>
   </div>
 </header>
 
-<main>
-  <section class="view" id="view-week" aria-label="本週">
-    <div class="week-left">
-      <div class="hero" id="hero"></div>
-      <div class="strip" id="strip"></div>
-      <div class="tasks" id="tasks"></div>
-    </div>
-    <div class="week-right" id="week-right"></div>
-  </section>
-
-  <section class="view" id="view-schools" aria-label="學校">
-    <aside class="rail">
-      <div class="rail-head"><b>學校 <span class="muted" id="rail-count"></span></b><span class="small muted" id="rail-fee"></span></div>
-      <div class="rail-list scroll" id="rail"></div>
-      <div class="rail-foot"><button class="btn sm" type="button" id="rail-add">＋ 新增學校</button><button class="btn sm ghost" type="button" id="rail-print">列印總表</button></div>
-    </aside>
-    <div class="sheet" id="sheet"></div>
-  </section>
-
-  <section class="view" id="view-docs" aria-label="備審">
-    <div style="display:flex;flex-direction:column;flex:1;min-height:0;min-width:0">
-      <div class="view-head">
-        <div><h2>備審資料</h2><p class="sub" id="docs-sub"></p></div>
-        <div class="view-tools" id="docs-tools"></div>
-      </div>
-      <div class="matrix-wrap" id="matrix"></div>
-    </div>
-  </section>
-
-  <section class="view" id="view-calendar" aria-label="行事曆">
-    <div class="cal-head">
-      <div class="cal-nav">
-        <h2 id="cal-title"></h2>
-        <button class="icon-btn" type="button" id="cal-prev" aria-label="上個月">‹</button>
-        <button class="icon-btn" type="button" id="cal-next" aria-label="下個月">›</button>
-        <button class="btn sm ghost" type="button" id="cal-today">今天</button>
-      </div>
-      <div class="view-tools" id="cal-tools"></div>
-    </div>
-    <div class="cal-grid" id="cal-grid"></div>
-    <div class="cal-foot"><div class="legend" id="cal-legend"></div><span id="cal-note"></span></div>
-    <div class="daypop" id="daypop"></div>
-  </section>
-
-  <section class="view" id="view-finder" aria-label="找科系">
-    <div class="finder-left">
-      <div class="search"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="q" placeholder="科系、學校或簡章裡的字，例如：資工、清大 電機、AIS3" autocomplete="off" aria-label="搜尋科系"></div>
-      <div class="filters">
-        <select id="f-region" aria-label="地區"><option value="">全部地區</option><option value="北">北部</option><option value="中">中部</option><option value="南">南部</option><option value="東">東部・離島</option></select>
-        <label class="toggle"><input type="checkbox" id="f-open">還能報名</label>
-        <label class="toggle"><input type="checkbox" id="f-nopf">不用作品集</label>
-        <label class="toggle"><input type="checkbox" id="f-norl">不用推薦信</label>
-        <span id="cond-bar" class="cond-row"></span>
-      </div>
-      <div class="result-meta" id="result-meta"></div>
-      <div class="results scroll" id="results"></div>
-    </div>
-    <div class="finder-right" id="prog"></div>
-  </section>
+<main id="main">
+  <section class="view" id="view-next" aria-label="接下來" hidden></section>
+  <section class="view" id="view-schools" aria-label="學校" hidden></section>
+  <section class="view" id="view-calendar" aria-label="行事曆" hidden></section>
 </main>
 
-<!-- 新增學校：選學校 → 選系組 → 確認 → 完成 -->
-<dialog id="dlg-add" class="modal" tabindex="-1" aria-labelledby="add-title">
-  <div class="modal-head">
-    <div class="t"><h2 id="add-title">新增學校</h2><ol class="wizard-steps" id="add-steps"><li data-step="1"><span>1</span>學校</li><li data-step="2"><span>2</span>系組</li><li data-step="3"><span>3</span>確認</li></ol></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
+<dialog id="dlg-add" class="modal wide" aria-labelledby="add-title">
+  <div class="modal-head"><h2 id="add-title">加學校</h2><button class="icon-btn" type="button" data-close aria-label="關閉">✕</button></div>
   <div class="modal-body" id="add-body"></div>
 </dialog>
 
-<!-- 設定：外觀、我的條件、提醒、Google Sheets、匯出與備份、特選須知 -->
-<dialog id="dlg-settings" class="modal" tabindex="-1" aria-labelledby="set-title">
-  <div class="modal-head">
-    <div class="t"><h2 id="set-title">設定</h2></div>
-    <button class="icon-btn" type="button" data-close aria-label="關閉">✕</button>
-  </div>
-  <div class="modal-body settings-body" id="settings"></div>
+<dialog id="dlg-settings" class="modal" aria-labelledby="set-title">
+  <div class="modal-head"><h2 id="set-title">設定</h2><button class="icon-btn" type="button" data-close aria-label="關閉">✕</button></div>
+  <div class="modal-body" id="settings-body"></div>
 </dialog>
 
-<div id="print" aria-hidden="true"></div>
-<input type="file" id="import-file" accept=".json,application/json" hidden>
+<div id="bar" role="alert" hidden></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="print" aria-hidden="true"></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

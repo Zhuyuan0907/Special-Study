@@ -1,109 +1,131 @@
-// 啟動：載入資料、接上五個畫面、快速鍵、列印。
-import {S, P, KINDS, esc, todayKey, diffDays, fmtDate, wdShort, onChange, loadRecords, loadPrograms, upcoming, liveEvents, saving, toast, deptMain, firstDate, appName, activeApp} from './core.js';
-import {go, onView, fromHash, route} from './router.js';
-import {renderWeek, wireWeek} from './home.js';
-import {renderSchools, selectSchool, wireSchools, currentId, refreshSheet} from './schools.js';
-import {renderDocs, wireDocs} from './docs.js';
-import {renderCalendar, wireCalendar, closePop} from './calendar.js';
-import {renderFinder, renderProgEmpty, openProgram, wireFinder, fd} from './finder.js';
-import {wireWizard, openWizard} from './wizard.js';
-import {openSettings, wireSettings} from './settings.js';
-import {icon, shortName} from './ui.js';
+// 啟動：載入資料、三個分頁（接下來・學校・行事曆）、兩個對話框（加學校、設定）、快速鍵、分頁標題、簡章更新提示。
+import {S, P, $, $$, load, refresh, onChange, now, today, toast, setBar, toTop, undoLast, agendaNow, appById, shortName, ready, ls, editing} from './core.js';
+import {route, go, onRoute, start} from './router.js';
+import {wireEdit, closeEdit, editKey, snapshotEdit, restoreEdit, afterRender, closeMenu, fmtVal} from './ui.js';
+import * as next from './next.js';
+import * as schools from './schools.js';
+import * as calendar from './calendar.js';
+import * as add from './add.js';
+import * as settings from './settings.js';
+import {shortSchool} from './logic.js';
 
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const VIEWS = {next, schools, calendar};
+let booted = false;
 
-/* ---------- 畫面切換 ---------- */
-function showView(view, params = {}) {
-  $$('.view').forEach(v => v.classList.toggle('on', v.id === 'view-' + view));
-  $$('#tabs [data-view]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
-  closePop();
-  if (view === 'week') renderWeek();
-  if (view === 'schools') { selectSchool(params.id || currentId() || (S.apps[0] && S.apps[0].id), {sec: params.sec}); if (!currentId()) renderSchools(); }
-  if (view === 'docs') renderDocs();
-  if (view === 'calendar') renderCalendar();
-  if (view === 'finder') { renderFinder(); if (params.id && P.byId.has(params.id)) openProgram(params.id); else renderProgEmpty(); if (params.q != null) { fd.q = params.q; $('#q').value = params.q; } if (!params.id) setTimeout(() => $('#q').focus(), 0); }
+/* ---------- 畫面 ---------- */
+function show() {
+  for (const k of Object.keys(VIEWS)) $('#view-' + k).hidden = k !== route.view;
+  for (const a of $$('#tabs a')) { if (a.dataset.view === route.view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+  closeMenu();
+  if (editKey()) closeEdit();
+  render();
+  if (route.open === 'add') { const pid = route.pid; route.open = ''; route.pid = ''; ready.then(() => add.open({pid})); }
 }
-onView(showView);
-function renderActive() {
-  updateTitle();
-  if (route.view === 'week') renderWeek();
-  else if (route.view === 'schools') renderSchools();
-  else if (route.view === 'docs') renderDocs();
-  else if (route.view === 'calendar') renderCalendar();
-  else if (route.view === 'finder') renderFinder();
+function render() {
+  if (!booted) return;
+  const snap = snapshotEdit();
+  try { VIEWS[route.view].render(route); } catch (e) { console.error(e); }
+  restoreEdit(snap);
+  afterRender();
+  title();
 }
-onChange(renderActive);
+onRoute(show);
+onChange(render);
 
-/* ---------- 分頁標題倒數 ---------- */
-function updateTitle() {
-  const next = upcoming(liveEvents())[0];
-  if (!next) { document.title = '我的特選紀錄'; return; }
-  const f = next.date >= todayKey() ? next.date : next.last, n = diffDays(f);
-  document.title = `${n === 0 ? '今天' : n === 1 ? '明天' : n + ' 天'}｜${shortName(next.app)} ${KINDS[next.kind].label} · 特選`;
+/* ---------- 分頁標題：特選 · 今天 市北 15:30 ---------- */
+let sig = '';
+function title() {
+  let t = '特選';
+  try {
+    const ag = agendaNow() || {}, rows = ag.rows || [], r = rows[ag.focalIndex];
+    sig = JSON.stringify(rows.map(x => [x.appId, x.date, x.time, x.type, x.overdue, x.question ? 1 : 0]));
+    if (r && r.date === today()) { const a = appById(r.appId); t += ` · 今天 ${a ? shortName(a) : ''}${r.time ? ' ' + r.time : ''}`; }
+  } catch (e) { console.error(e); }
+  document.title = t;
 }
+// 時間過了，「今天」、逾期、要不要問結果都會變：每分鐘看一次，有變才重畫。
+let lastMin = now();
+setInterval(() => {
+  const n = now();
+  if (!booted || n === lastMin || document.hidden || editing() || $('dialog[open]')) return;
+  const day = n.slice(0, 10) !== lastMin.slice(0, 10);
+  lastMin = n;
+  const before = sig;
+  try { const ag = agendaNow() || {}; const s = JSON.stringify((ag.rows || []).map(x => [x.appId, x.date, x.time, x.type, x.overdue, x.question ? 1 : 0])); if (!day && s === before) return; } catch { /* 照樣重畫 */ }
+  render();
+}, 30 * 1000);
 
-/* ---------- 列印 ---------- */
-function printAll() {
-  const t = todayKey();
-  const w = d => d ? `${fmtDate(d.date)}${d.time ? ' ' + d.time : ''}` : '';
-  const apps = S.apps.filter(activeApp);
-  const rows = apps.map(a => `<tr><td>${esc(a.school)}<br><small>${esc(a.dept || '')}</small></td><td>${esc(({prep: '準備中', applied: '已報名', interview: '待面試', waiting: '等放榜', admitted: '正取', waitlist: '備取' + (a.waitNo ? ' ' + a.waitNo : '')})[a.status] || '')}</td><td>${w(firstDate(a, ['reg']))}</td><td>${w(firstDate(a, ['upload', 'letter']))}</td><td>${w(firstDate(a, ['interview', 'exam', 'window']))}</td><td>${w(firstDate(a, ['release']))}</td><td>${w(firstDate(a, ['confirm']))}</td><td>${w(firstDate(a, ['giveup']))}</td><td>${(a.docs || []).filter(d => d.done).length}/${(a.docs || []).length}</td></tr>`).join('');
-  const up = upcoming(liveEvents()).filter(ev => diffDays(ev.date >= t ? ev.date : ev.last) <= 60).slice(0, 40);
-  $('#print').innerHTML = `<h1>我的特選紀錄</h1><div class="pmeta">${fmtDate(t)}（週${wdShort(t)}）列印・${apps.length} 間學校</div>
-    <table><thead><tr><th>學校／系組</th><th>狀態</th><th>報名截止</th><th>繳件截止</th><th>面試</th><th>放榜</th><th>報到截止</th><th>放棄截止</th><th>備審</th></tr></thead><tbody>${rows}</tbody></table>
-    <h2>接下來 60 天</h2><table><tbody>${up.map(ev => `<tr><td style="width:110px">${fmtDate(ev.date)}（${wdShort(ev.date)}）${ev.time ? ' ' + esc(ev.time) : ''}</td><td>${esc(shortName(ev.app))} ${esc(deptMain(ev.app))}</td><td>${KINDS[ev.kind].label}${ev.note ? ' · ' + esc(ev.note) : ''}</td></tr>`).join('')}</tbody></table>
-    <div class="pcols">${apps.map(a => `<div><h2>${esc(appName(a))}</h2><ul>${(a.docs || []).map(d => `<li>${d.done ? '☑' : '☐'} ${esc(d.name)}</li>`).join('')}</ul></div>`).join('')}</div>`;
-  window.print();
+/* ---------- 載入後：學年度、從備份還原、簡章更新 ---------- */
+function afterLoad() {
+  const m = S.meta || {};
+  const y = m.year || P.year;
+  if (y) $('#brand-year').textContent = `${y} 學年度`;
+  recovered(m.recovered);
+  syncToast();
 }
-function printOne(id) {
-  const a = S.apps.find(x => x.id === id); if (!a) return;
-  const dates = (a.dates || []).filter(d => d.date).sort((x, y) => x.date.localeCompare(y.date));
-  $('#print').innerHTML = `<h1>${esc(appName(a))}</h1><div class="pmeta">${fmtDate(todayKey())} 列印${a.place ? '・面試地點：' + esc(a.place) : ''}</div>
-    <div class="pcols"><div><h2>日期</h2><table><tbody>${dates.map(d => `<tr><td style="width:120px">${fmtDate(d.date)}（${wdShort(d.date)}）${d.time ? ' ' + esc(d.time) : ''}</td><td>${KINDS[d.kind] ? KINDS[d.kind].label : ''}</td><td>${esc(d.note || '')}</td></tr>`).join('')}</tbody></table></div>
-    <div><h2>備審</h2><ul>${(a.docs || []).map(d => `<li>${d.done ? '☑' : '☐'} ${esc(d.name)}</li>`).join('')}</ul><h2>面試當天要帶</h2><ul>${(a.kit || []).map(d => `<li>☐ ${esc(d.name)}</li>`).join('')}</ul></div></div>
-    ${a.prep ? `<h2>準備重點</h2><p style="white-space:pre-wrap;font-size:11px">${esc(a.prep)}</p>` : ''}${a.notes ? `<h2>筆記</h2><p style="white-space:pre-wrap;font-size:11px">${esc(a.notes)}</p>` : ''}`;
-  window.print();
+function recovered(r) {
+  if (!r) { setBar('recovered', null); return; }
+  const key = JSON.stringify(r);
+  if (ls.get('recoveredSeen') === key) return;
+  const from = typeof r === 'string' ? r : r.from || r.backup || r.file || '';
+  const day = /(\d{4})-(\d{2})-(\d{2})/.exec(from);
+  setBar('recovered', {err: !from, msg: from ? `紀錄檔讀不到，已改用${day ? ` ${day[2]}/${day[3]} 的` : ''}備份` : '紀錄檔讀不到，也沒有能用的備份', btn: {label: '知道了', fn: () => { ls.set('recoveredSeen', key); setBar('recovered', null); }}});
+}
+// 每次簡章同步只提示一次（記在這台電腦）。
+function syncToast() {
+  const logs = [...(S.syncLog || []), S.meta && S.meta.syncLog].filter(x => x && x.id && Array.isArray(x.changes) && x.changes.length);
+  const seen = ls.get('syncSeen', []);
+  const fresh = logs.filter((x, i) => !seen.includes(x.id) && logs.findIndex(y => y.id === x.id) === i);
+  if (!fresh.length) return;
+  ls.set('syncSeen', [...seen, ...fresh.map(x => x.id)].slice(-50));
+  const ch = fresh.flatMap(x => x.changes), c = ch[0];
+  const app = appById(c.appId);
+  const name = app ? shortName(app) : shortSchool(c.school || '', P.aliases);
+  const what = c.from && c.to ? `${c.what} ${fmtVal(c.from)} → ${fmtVal(c.to)}` : c.to ? `新增 ${c.what} ${fmtVal(c.to)}` : `${c.what} 移除`;
+  toast(`簡章更新：${name} ${what}${ch.length > 1 ? `，還有 ${ch.length - 1} 項` : ''}`, {ms: 10000, action: app ? {label: '打開', fn: () => go({view: 'schools', id: app.id})} : null});
 }
 
 /* ---------- 接線 ---------- */
-$('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) go(b.dataset.view); });
-$('#btn-add').addEventListener('click', () => openWizard());
-$('#btn-settings').innerHTML = `${icon('settings')}設定`;
-$('#btn-settings').addEventListener('click', () => openSettings());
-$('#rail-print').addEventListener('click', printAll);
-document.addEventListener('print-all', printAll);
-document.addEventListener('print-one', e => printOne(e.detail));
-document.addEventListener('profile-changed', renderActive);
-$$('dialog').forEach(d => { d.addEventListener('click', e => { if (e.target === d) d.close(); }); $$('[data-close]', d).forEach(b => b.addEventListener('click', () => d.close())); });
-document.addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing || e.keyCode === 229) return;
-  const a = document.activeElement;
-  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
-  if (document.querySelector('dialog[open]')) return;
-  const views = ['week', 'schools', 'docs', 'calendar', 'finder'];
-  if (/^[1-5]$/.test(e.key)) { e.preventDefault(); go(views[Number(e.key) - 1]); }
-  else if (e.key === '/') { e.preventDefault(); go('finder'); }
-  else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openWizard(); }
+// 站內連結（#schools/<id> 之類）走 router，才會 pushState；在對話框裡點就先關掉對話框。
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#"]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
+  e.preventDefault();
+  const d = a.closest('dialog[open]');
+  if (d) d.close();
+  go(a.getAttribute('href'));
 });
-window.addEventListener('hashchange', () => { const r = fromHash(); if (r.view !== route.view || r.params.id !== route.params.id) go(r.view, r.params); });
-window.addEventListener('focus', () => { if (document.querySelector('dialog[open]') || saving() || route.view === 'schools') return; loadRecords().catch(() => {}); });
-setInterval(() => { if (!document.querySelector('dialog[open]') && route.view === 'week') renderWeek(); }, 60 * 1000);
+$('#btn-add').addEventListener('click', () => ready.then(() => add.open()));
+$('#btn-settings').addEventListener('click', () => ready.then(() => settings.open()));
+for (const d of $$('dialog')) {
+  d.addEventListener('click', e => { if (e.target === d) d.close(); });
+  for (const b of $$('[data-close]', d)) b.addEventListener('click', () => d.close());
+  d.addEventListener('close', () => { closeMenu(); toTop($('#toast')); toTop($('#bar')); });
+}
+wireEdit();
 
-wireWeek(); wireSchools(); wireDocs(); wireCalendar(); wireFinder(); wireWizard(); wireSettings();
+const inField = el => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (closeMenu()) { e.preventDefault(); return; }
+    if ($('dialog[open]')) return;                         // 對話框自己會關
+    if (editKey()) { e.preventDefault(); closeEdit(); }
+    return;
+  }
+  if (e.isComposing || e.keyCode === 229) return;
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && !inField(document.activeElement) && !editKey()) { if (undoLast()) e.preventDefault(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey || inField(document.activeElement) || $('dialog[open]') || editKey()) return;
+  const i = ['1', '2', '3'].indexOf(e.key);
+  if (i >= 0) { e.preventDefault(); go({view: ['next', 'schools', 'calendar'][i]}); }
+  else if (e.key === 'n' || e.key === 'N' || e.key === '/') { e.preventDefault(); ready.then(() => add.open()); }
+});
+// 回到網頁（切回分頁、手機解鎖）就重新載入：別的裝置可能改過。「改」表單打開時不載。
+const back = () => { if (document.visibilityState === 'visible') refresh().then(afterLoad); };
+addEventListener('focus', back);
+document.addEventListener('visibilitychange', back);
 
 /* ---------- 啟動 ---------- */
-// 先把網址指定的畫面顯示出來，資料到了再補上。科系資料（programs.json）比較大，網路慢時要好幾秒，
-// 不能等它下載完才顯示畫面。
-const first = fromHash();
-go(first.view, first.params);
-loadRecords()
-  .then(() => { if (route.view === 'schools' && !currentId()) selectSchool(route.params.id || (S.apps[0] && S.apps[0].id), {sec: route.params.sec}); })
-  .catch(e => toast('無法連到伺服器：' + e.message));
-loadPrograms()
-  .then(() => {
-    if (P.year) $('#brand-year').textContent = `${P.year} 學年度`;
-    if (route.view === 'finder' && route.params.id && fd.pid !== route.params.id) openProgram(route.params.id);
-    if (route.view === 'schools') refreshSheet();
-  })
-  .catch(e => toast('科系資料載入失敗：' + e.message));
+for (const m of [next, schools, calendar, add, settings]) { try { m.init && m.init(); } catch (e) { console.error(e); } }
+start();
+show();
+load().then(() => { booted = true; render(); afterLoad(); }).catch(e => console.error(e));

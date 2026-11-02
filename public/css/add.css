@@ -1,0 +1,96 @@
+/* 加學校（js/add.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   版面：上面一列（搜尋框對齊左欄、篩選在右欄），中間左結果、右系組，底下一行（簡章日期・手動新增）。只有結果和右欄自己捲動。 */
+.add { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.add-top { display: grid; grid-template-columns: 440px minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--line); flex: none; }
+.add-top #add-q { margin: 14px 16px 14px 24px; height: 36px; padding: 0 12px; font-size: 15px; }
+#add-q::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.add-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; padding: 0 24px 0 28px; font-size: 13px; min-width: 0; }
+.add-filters select { height: 32px; font-size: 13px; }
+.add-filters .check { color: var(--ink-2); line-height: 20px; }
+.add-count { margin-left: auto; color: var(--ink-3); white-space: nowrap; }
+
+.add-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 440px minmax(0, 1fr); }
+.add-list { border-right: 1px solid var(--line); }
+.add-detail { padding: 20px 28px 28px; }
+
+/* 結果的一列：簡稱＋系組／全名・報名截止／（簡章原文的那一段） */
+.add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 10px 16px 10px 24px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.add-row:hover { background: var(--tint); }
+.add-row-main { min-width: 0; }
+.add-row .l1 { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; font-size: 15px; line-height: 24px; }
+.add-row .l1 .dept { min-width: 0; overflow-wrap: anywhere; }
+.add-row .l2, .add-row .l3 { font-size: 13px; line-height: 20px; color: var(--ink-3); overflow-wrap: anywhere; }
+.add-row .l3 { margin-top: 2px; color: var(--ink-2); }
+.add-row .l3 .pg { margin-right: 4px; }
+.add-row .when { color: inherit; }
+.add-row .when.hot { color: var(--accent); }
+.add-row-act { font-size: 13px; white-space: nowrap; }
+.add-row.closed .l1, .add-row.closed .sch, .add-row.closed .l3 { color: var(--ink-3); }
+.add-empty { padding: 20px 24px; font-size: 15px; line-height: 24px; color: var(--ink-2); }
+.add-empty .link { margin-left: 12px; font-size: 15px; }
+.add-more { padding: 14px 24px; }
+.add-gen { padding: 18px 16px 16px 24px; }
+.add-gen .col-h { margin-bottom: 6px; }
+.add-gen .ref { padding: 6px 0; overflow-wrap: anywhere; }
+.add-gen-s { color: var(--ink-2); font-weight: 600; }
+
+/* 一個系組的簡章重點（programDetail） */
+.add-back { display: none; margin-bottom: 12px; }
+.pd-head { display: flex; align-items: flex-start; gap: 16px; }
+.pd-title { flex: 1; min-width: 0; }
+.pd-title h3 { font-size: 20px; line-height: 30px; font-weight: 600; }
+.pd-dept { font-size: 15px; line-height: 24px; color: var(--ink-2); }
+.pd-act { display: flex; align-items: center; gap: 12px; flex: none; font-size: 13px; padding-top: 2px; }
+.pd-act .link { font-size: 13px; }
+.pd-facts { margin-top: 10px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.pd-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin-top: 4px; font-size: 13px; line-height: 20px; }
+.pd-links .pg { font-size: 13px; }
+.pd-warn { margin-top: 12px; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--ink); }
+.pd-hit { margin-top: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pd-hit .pg { margin-right: 4px; }
+.pd-sec { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.pd-sec .col-h { margin-bottom: 6px; }
+/* 時程：整張表一個 grid，日期、時間兩欄照最寬的字決定（郵戳 11/16 也不會擠到名稱） */
+.pd-tl { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); column-gap: 20px; font-size: 15px; line-height: 26px; }
+.pd-tr { display: contents; }
+.pd-tr .pd-time { color: var(--ink-2); white-space: nowrap; }
+.pd-tr .pd-what { min-width: 0; overflow-wrap: anywhere; }
+.pd-tr .muted { font-size: 13px; }
+.pd-tr.past, .pd-tr.past .when, .pd-tr.past .pd-time { color: var(--ink-3); }
+.pd-kv { --cols: 5em minmax(0, 1fr) auto; font-size: 13px; line-height: 20px; padding: 5px 0; }
+.pd-k { color: var(--ink-3); white-space: nowrap; }
+.pd-v { color: var(--ink-2); overflow-wrap: anywhere; }
+.pd-v .link { font-size: 13px; margin-top: 2px; }
+.pd-pg { text-align: right; }
+.pd-docs { list-style: decimal; padding-left: 1.3em; }
+.pd-docs li + li { margin-top: 2px; }
+.pd-docs li > span:first-child { color: var(--ink); }
+.pd-qual > div + div { margin-top: 2px; }
+
+/* 底下一行：簡章資料日期・手動新增（打開時變成三個欄位） */
+.add-foot { min-height: 45px; }
+.add-foot .push { font-size: 13px; }
+.add-manual { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+.add-manual input[type="text"] { height: 30px; width: 11em; font-size: 13px; }
+.add-manual input[name="dept"] { width: 14em; }
+.add-manual-d { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.add-manual-d input { height: 30px; font-size: 13px; }
+
+/* 窄的時候（平板直放、手機）：只顯示結果；點一列才看那個系組，上面有「‹ 結果」回去 */
+@media (max-width: 860px) {
+  .add-top { grid-template-columns: minmax(0, 1fr); }
+  .add-top #add-q { margin: 12px 16px 8px; }
+  .add-filters { padding: 0 16px 10px; gap: 6px 16px; }
+  .add-main { grid-template-columns: minmax(0, 1fr); }
+  .add-list { border-right: 0; }
+  .add-row { padding: 10px 16px; }
+  .add-detail { padding: 14px 16px 24px; }
+  .add:not(.show-detail) .add-detail { display: none; }
+  .add.show-detail .add-list { display: none; }
+  .add-back { display: inline-block; }
+  .pd-head { flex-direction: column; gap: 8px; }
+  .pd-tl { column-gap: 12px; }
+  .add-gen { padding: 16px; }
+  .add-empty { padding: 16px; }
+  .add-manual input[type="text"], .add-manual input[name="dept"] { width: calc(50% - 4px); }
+}

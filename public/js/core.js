@@ -1,50 +1,526 @@
-// 共用：詞彙、工具函式、狀態、儲存、由紀錄推導出的日期與提醒、簡章資料的處理。
-// 各個畫面（今天、行事曆、學校、找科系、學校紀錄）都從這裡 import。
+// 共用：時間、狀態、載入、儲存、提示、小工具。各畫面都從這裡 import。
+// 寫入一律走 mutate() / addApp() / removeApp() / saveProfile() / saveTodos()：
+// 先改畫面上的那一份，再送到伺服器；伺服器說版本不對（409）就拿它的版本把同一個改動重做一次；
+// 存不進去（500、斷線）就留著重試，畫面上掛一條「沒有存到，重試中…」。
+import * as L from './logic.js';
 
-/* ---------- 詞彙 ---------- */
-export const STATUS = {
-  prep: {label: '準備中', tone: ''},
-  applied: {label: '已報名', tone: 'info'},
-  interview: {label: '待面試', tone: 'info'},
-  waiting: {label: '等放榜', tone: 'info'},
-  admitted: {label: '正取', tone: 'ok'},
-  waitlist: {label: '備取', tone: 'warn'},
-  rejected: {label: '未錄取', tone: 'muted'},
-  out: {label: '一階未通過', tone: 'muted'},
-  skipped: {label: '沒有報名', tone: 'muted'},
+/* ---------- 工具 ---------- */
+export const $ = (s, r = document) => r.querySelector(s);
+export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+export const clone = o => o === undefined ? undefined : JSON.parse(JSON.stringify(o));
+export const uid = () => (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+export const pad = n => String(n).padStart(2, '0');
+export const isDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+export const composing = e => e.isComposing || e.keyCode === 229;
+export const debounce = (fn, ms) => {
+  let t = null;
+  const f = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); };
+  f.flush = (...a) => { if (t === null) return; clearTimeout(t); t = null; fn(...a); };
+  return f;
 };
-export const STAGE_ORDER = {admitted: 0, waitlist: 1, interview: 2, waiting: 3, applied: 4, prep: 5, rejected: 6, out: 7, skipped: 8};
-export const KINDS = {
-  reg: {label: '報名截止', cat: 'due'},
-  pay: {label: '繳費截止', cat: 'due'},
-  upload: {label: '繳件截止', cat: 'due'},
-  letter: {label: '推薦函截止', cat: 'due'},
-  stage1: {label: '一階名單', cat: 'result'},
-  window: {label: '甄試期間', cat: 'test'},
-  interview: {label: '面試', cat: 'test'},
-  exam: {label: '筆試／術科', cat: 'test'},
-  release: {label: '放榜', cat: 'result'},
-  review: {label: '成績複查', cat: 'other'},
-  confirm: {label: '報到截止', cat: 'due'},
-  giveup: {label: '放棄截止', cat: 'due'},
-  wait: {label: '備取遞補', cat: 'result'},
-  score: {label: '成績單', cat: 'result'},
-  open: {label: '報名開始', cat: 'other'},
-  other: {label: '其他', cat: 'other'},
+export const ls = {
+  get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 無痕模式 */ } },
 };
-export const DEADLINE_KINDS = new Set(['reg', 'pay', 'upload', 'letter', 'confirm', 'giveup', 'review']);
-export const METHODS = ['資料審查', '面試', '筆試', '實作／術科'];
-export const DEFAULT_DOCS = ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件', '推薦信', '系所指定其他資料'];
-export const SUGGEST = ['資工', '資安', 'AIS3', 'APCS', '奧林匹亞', '科展', '電機', '資管', '醫學', '生科', '數學', '物理', '化學', '設計', '外文', '法律', '心理', '教育'];
-export const REGION_NAME = {北: '北部', 中: '中部', 南: '南部', 東: '東部・離島'};
-export const REGION_ORDER = {北: 0, 中: 1, 南: 2, 東: 3};
-export const PALETTE_SIZE = 10;
-// 面試當天通常要帶的東西；每間學校可以自己增減。
-export const DEFAULT_KIT = ['身分證', '准考證／應試通知', '作品集或成果（紙本或平板）', '自傳、讀書計畫各一份', '交通方式與路線查好', '服裝整理'];
-// 常見面試問題，寫面試筆記時的提示。
-export const COMMON_QUESTIONS = ['請用一分鐘自我介紹。', '為什麼選我們系？為什麼走特殊選才？', '高中最有成就感的一件事是什麼？遇到什麼困難？', '你的作品／專題裡，哪部分是你自己做的？', '如果沒有錄取，你的計畫是什麼？', '你對這個領域未來四年的規劃？', '有沒有想問我們的問題？'];
 
-// 「依我的條件找科系」：勾選的經歷，對照簡章的報名資格文字。關鍵字比對前會先正規化（小寫、台→臺）。
+/* ---------- 時間（台北） ---------- */
+// ?now=2026-11-24T10:00 只給測試用：前端的時鐘固定在那個台北時間。沒有就用真的時間。
+const FAKE = (() => {
+  try {
+    const v = new URLSearchParams(location.search).get('now') || '';
+    const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/.exec(v);
+    return m ? `${m[1]}T${m[2] || '00:00'}` : '';
+  } catch { return ''; }
+})();
+export const fakeNow = FAKE;
+const TPE = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+// 'YYYY-MM-DDTHH:MM'，台北的牆上時間；logic.js 的 now 參數都用這個。
+export function now() {
+  if (FAKE) return FAKE;
+  const p = Object.fromEntries(TPE.formatToParts(new Date()).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+}
+export const today = () => now().slice(0, 10);
+
+/* ---------- 狀態 ---------- */
+// S：使用者的紀錄（/api/records、/api/meta）。P：簡章資料（/data/*.json），載入後不變。
+export const S = {apps: [], todos: [], profile: {}, meta: {}, syncLog: [], loaded: false};
+export const P = {loaded: false, schools: [], programs: [], byId: new Map(), fetched: '', year: null, source: '', pdf: new Set(), links: {}, aliases: {}, synonyms: {}, terms: {aliases: {}, synonyms: {}}, season: []};
+const subs = new Set();
+export const onChange = fn => { subs.add(fn); return () => subs.delete(fn); };
+export function rerender() { for (const fn of [...subs]) { try { fn(); } catch (e) { console.error(e); } } }
+let readyResolve;
+export const ready = new Promise(r => { readyResolve = r; });
+export const editing = () => !!document.body.dataset.editing;
+
+/* ---------- 由紀錄推導（畫面共用，參數一致） ---------- */
+export const appById = id => S.apps.find(a => a.id === id) || null;
+export const programOf = app => (app && P.byId.get(app.programId)) || null;
+export function schoolCode(app) {
+  const p = programOf(app);
+  if (p) return p.code;
+  const s = P.schools.find(x => x.name === (app && app.school));
+  return s ? s.code : '';
+}
+const okUrl = u => typeof u === 'string' && /^https?:\/\//.test(u) ? u : '';
+// 報名系統、招生網、系網、簡章 PDF（沒有就是空字串）
+export function linksOf(app) {
+  const p = programOf(app), code = schoolCode(app), l = (code && P.links[code]) || {};
+  return {apply: okUrl(l.apply), adm: okUrl(l.adm), dept: okUrl(app && app.url) || okUrl(p && p.u), pdf: code && P.pdf.has(code) ? `/data/brochures/pdf/${code}.pdf` : '', code};
+}
+export const pdfAt = (app, page) => { const u = linksOf(app).pdf; return u ? u + (page ? '#page=' + page : '') : ''; };
+export const PALETTE = 10;
+// 顏色：紀錄裡的 color（遷移時已固定）；沒有的話用加入的順序。
+export function colourOf(app) {
+  if (app && Number.isInteger(app.color)) return ((app.color % PALETTE) + PALETTE) % PALETTE;
+  const i = S.apps.indexOf(app);
+  return (i < 0 ? S.apps.length : i) % PALETTE;
+}
+export function nextColour() {
+  const used = S.apps.map(colourOf);
+  for (let i = 0; i < PALETTE; i++) if (!used.includes(i)) return i;
+  return S.apps.length % PALETTE;
+}
+export const shortName = app => app ? L.shortSchool(app.school, P.aliases) : '';
+export const deptName = app => app ? L.shortDept(app.dept || '') : '';
+// logic.js 的共用參數（其他學校、簡稱、連結、學測成績日期）：每個畫面都傳一樣的，算出來才會一致。
+export const lopts = extra => ({apps: S.apps, programs: P.byId, aliases: P.aliases, links: P.links, schools: P.schools, season: P.season, ...extra});
+export const agendaNow = opts => L.agenda(S.apps, P.byId, now(), lopts(opts));
+export const orderNow = () => L.orderApps(S.apps, P.byId, now());
+export const stageOf = app => L.displayStage(app, programOf(app), now());
+export const statusOf = app => L.statusWord(app, programOf(app), now());
+export const nextOf = app => L.nextStep(app, programOf(app), now(), lopts());
+export const timelineOf = app => L.timeline(app, programOf(app), now(), lopts());
+export const eventsFor = (app, opts) => L.eventsOf(app, programOf(app), lopts(opts));
+export const clashNow = () => L.clashes(S.apps, P.byId, now(), lopts());
+export const actx = app => ({now: now(), apps: S.apps, program: programOf(app), programs: P.byId, uid});
+// 按鈕的動作：act(app.id, 'tick', {key:'pay'}, {toast:'已記下：市北 繳費'})
+export const act = (appId, actionId, payload, opts) => mutate(appId, a => L.applyAction(a, actionId, payload, actx(a)), opts);
+// 幾間學校的簡稱，照學校清單的順序（同天、撞期在每個畫面都一樣）→ ['宜大', '高師大']
+export function namesOf(ids) {
+  const o = orderNow(), rank = new Map([...o.active, ...o.ended].map((a, i) => [a.id, i]));
+  return [...new Set(ids || [])].map(appById).filter(Boolean).sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).map(shortName);
+}
+// 回答、決定之後的提示（接下來、學校頁共用）：寫新的狀態字「已記下：市北 已報名」；狀態字不變的動作寫動作本身。
+export function actionToast(app, id, payload = {}) {
+  const name = shortName(app);
+  if (id === 'skipInterview') return `已記下：${name} 不去`;
+  if (id === 'notYet') return `已記下：${name} 還沒遞補`;
+  if (id === 'keep') return `已記下：留在 ${name}`;
+  if (id === 'swap') return `已記下：換到 ${name}`;
+  let after;
+  try { after = L.applyAction(app, id, payload, actx(app)); } catch { return ''; }
+  return `已記下：${name} ${L.statusWord(after, programOf(app), now())}`;
+}
+// 打勾的提示：狀態變了（勾完 → 已報名）寫新的狀態字；勾完一列的最後一個必繳部分（那列會不見）也給提示，才能復原。
+export function tickToast(app, key, done, row) {
+  let after;
+  try { after = L.applyAction(app, 'tick', {key, done}, actx(app)); } catch { return ''; }
+  if (after.status !== app.status) return `已記下：${shortName(app)} ${L.statusWord(after, programOf(app), now())}`;
+  const last = done && row && row.parts && !row.parts.some(pt => !pt.opt && !pt.done && pt.key !== key);
+  return last ? `已記下：${shortName(app)} ${row.parts.filter(pt => !pt.opt).map(pt => pt.name).join('・')}` : '';
+}
+// 學測、分科等大考日期（data/season.json），設定裡可以關掉。
+export const seasonItems = () => S.profile.hideExams ? [] : P.season.filter(e => isDate(e.date)).map(e => ({...e, end: isDate(e.end) && e.end > e.date ? e.end : ''}));
+
+/* ---------- 一直在的提示列 ---------- */
+// 一次只顯示一條，依重要性：網頁要重新整理 > 沒有存到 > 連不到 > 從備份還原
+const bars = new Map();
+const BAR_ORDER = ['stale', 'save', 'load', 'recovered'];
+export function setBar(kind, opts) {
+  if (opts) bars.set(kind, opts); else bars.delete(kind);
+  const el = $('#bar');
+  if (!el) return;
+  const k = BAR_ORDER.find(x => bars.has(x)) || [...bars.keys()][0];
+  if (!k) { el.hidden = true; el.innerHTML = ''; return; }
+  const b = bars.get(k);
+  el.className = b.err ? 'err' : '';
+  el.innerHTML = `<span class="msg">${esc(b.msg)}</span>${b.btn ? `<button class="btn sm" type="button">${esc(b.btn.label)}</button>` : ''}`;
+  if (b.btn) el.querySelector('button').onclick = b.btn.fn;
+  el.hidden = false;
+  toTop(el);
+}
+// 打開的對話框在最上層，提示要搬進去才看得到。
+export function toTop(el) {
+  const host = $$('dialog[open]').pop() || document.body;
+  if (el && el.parentElement !== host) host.append(el);
+}
+
+/* ---------- 提示（下方置中，一次一則） ---------- */
+let toastT = 0, toastUndo = null;
+export function toast(msg, {undo, action, ms} = {}) {
+  const el = $('#toast');
+  if (!el) return;
+  toTop(el);
+  const a = undo ? {label: '復原', fn: undo} : action;
+  el.innerHTML = `<span class="msg">${esc(msg)}</span>${a ? `<button type="button">${esc(a.label)}</button>` : ''}`;
+  toastUndo = undo || null;
+  if (a) el.querySelector('button').onclick = () => { hideToast(); a.fn(); };
+  const life = ms || (a ? 8000 : 3000);
+  el.onmouseenter = () => clearTimeout(toastT);
+  el.onmouseleave = () => { clearTimeout(toastT); toastT = setTimeout(hideToast, 2500); };
+  el.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(hideToast, life);
+}
+export function hideToast() { clearTimeout(toastT); toastUndo = null; const el = $('#toast'); if (el) el.classList.remove('show'); }
+export function undoLast() { const u = toastUndo; if (!u) return false; hideToast(); u(); return true; }
+
+/* ---------- 連線 ---------- */
+export async function request(method, url, body) {
+  let res;
+  try {
+    res = await fetch(url, {method, cache: 'no-cache', headers: {'X-Client': '3', ...(body !== undefined ? {'Content-Type': 'application/json'} : {})}, body: body !== undefined ? JSON.stringify(body) : undefined});
+  } catch {
+    const err = new Error('連不到伺服器'); err.status = 0; throw err;
+  }
+  let data = null;
+  if (res.status !== 204) { const t = await res.text(); try { data = t ? JSON.parse(t) : null; } catch { data = t; } }
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `HTTP ${res.status}`);
+    err.status = res.status; err.data = data;
+    throw err;
+  }
+  return data;
+}
+// 重試的等待：1、2、4…30 秒；回到網頁或恢復連線就馬上再試。
+const wakers = new Set();
+const nap = ms => new Promise(r => { const w = () => { clearTimeout(t); wakers.delete(w); r(); }; const t = setTimeout(w, ms); wakers.add(w); });
+export const wakeRetries = () => { for (const w of [...wakers]) w(); };
+const backoff = n => Math.min(30000, 1000 * 2 ** n);
+const failing = new Set();
+function setFailing(key, on) {
+  if (on) failing.add(key); else failing.delete(key);
+  setBar('save', failing.size ? {msg: '沒有存到，重試中…', err: true} : null);
+}
+// 舊版網頁（沒帶 X-Client: 3）或伺服器更新過：只能重新整理。
+function stale(msg) { setBar('stale', {msg: msg || '網頁已更新，請重新整理', err: true, btn: {label: '重新整理', fn: () => location.reload()}}); }
+
+/* ---------- 改學校紀錄：mutate ---------- */
+// fn(app 的複本) 可以直接改複本，或回傳新的物件（logic.applyAction 就是回傳新的）。
+// 每間學校一個佇列：還沒被伺服器確認的 fn 都留著，409 時拿伺服器的版本依序重做。
+const Q = new Map();
+const IGNORE = new Set(['rev', 'updatedAt']);
+const applyFn = (fn, app) => { const c = clone(app); const r = fn(c); return r && typeof r === 'object' ? r : c; };
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function changedKeys(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  return [...keys].filter(k => !IGNORE.has(k) && !sameJson(a[k], b[k]));
+}
+function putLocal(app) {
+  const i = S.apps.findIndex(a => a.id === app.id);
+  if (i >= 0) S.apps[i] = app; else S.apps.push(app);
+}
+export const saving = () => [...Q.values()].some(q => q.fns.length) || [...W.values()].some(w => w.busy) || pendingDelete.size > 0;
+
+export function mutate(appId, fn, opts = {}) { return mutateMany([[appId, fn]], opts); }
+// 一次改幾間（例如換到 B：A 已放棄、B 已報到），一則提示、一個復原。
+export function mutateMany(list, {toast: msg = '', undo = true, action = null, ms} = {}) {
+  const undos = [], done = [];
+  for (const [id, fn] of list) {
+    const before = appById(id);
+    if (!before) continue;
+    let after;
+    try { after = applyFn(fn, before); } catch (e) { console.error(e); continue; }
+    const keys = changedKeys(before, after);
+    if (!keys.length) continue;
+    after.rev = before.rev;
+    putLocal(after);
+    const prev = clone(before);
+    undos.push([id, cur => { for (const k of keys) { if (prev[k] === undefined) delete cur[k]; else cur[k] = clone(prev[k]); } }]);
+    done.push(enqueue(id, fn));
+  }
+  if (done.length) rerender();
+  if (msg) toast(msg, undo && undos.length ? {undo: () => { mutateMany(undos); }, ms} : {action, ms});
+  return Promise.all(done);
+}
+// 新增一間（加學校）。app 要有 id；回傳存好時 resolve 的 promise。
+export function addApp(app, {toast: msg = '', action = null} = {}) {
+  if (!app.id) app.id = uid();
+  if (!Number.isInteger(app.color)) app.color = nextColour();
+  if (!app.createdAt) app.createdAt = Date.now();
+  putLocal(clone(app));
+  rerender();
+  if (msg) toast(msg, {action});
+  return enqueue(app.id, a => a);
+}
+
+function enqueue(id, fn) {
+  let q = Q.get(id);
+  if (!q) Q.set(id, q = {fns: [], busy: null});
+  q.fns.push(fn);
+  if (!q.busy) q.busy = flush(id, q).finally(() => { q.busy = null; });
+  return q.busy;
+}
+async function flush(id, q) {
+  let tries = 0, conflicts = 0;
+  while (q.fns.length) {
+    if (pendingDelete.has(id)) return;           // 刪除後 8 秒內：先不送，復原時再送
+    const app = appById(id);
+    if (!app) { q.fns = []; break; }
+    const sent = q.fns.length;
+    let res;
+    try { res = {ok: true, data: await request('PUT', `/api/apps/${encodeURIComponent(id)}`, app)}; }
+    catch (e) { res = {ok: false, status: e.status, data: e.data, msg: e.message}; }
+    if (res.ok) {
+      tries = 0; conflicts = 0;
+      q.fns.splice(0, sent);
+      setFailing('app:' + id, false);
+      const saved = res.data && typeof res.data === 'object' ? (res.data.app || res.data) : null;
+      const cur = appById(id);
+      if (cur && saved && saved.rev != null) cur.rev = saved.rev;
+      // 沒有新的改動在排隊：改用伺服器的版本（伺服器會補回它保管的欄位）
+      if (cur && saved && saved.id === id && !q.fns.length && !pendingDelete.has(id)) {
+        const differs = changedKeys(cur, saved).length > 0;
+        putLocal(saved);
+        if (differs) rerender();
+      }
+      continue;
+    }
+    const cur = res.data && typeof res.data === 'object' ? (res.data.app || (res.data.id === id ? res.data : null)) : null;
+    if (res.status === 409 && cur) {
+      // 別的分頁或手機先改過：用伺服器的版本重做一次還沒確認的改動
+      if (++conflicts > 3) {
+        putLocal(cur); q.fns = []; rerender();
+        setBar('save', {msg: `${shortName(cur)} 的改動沒有存到，已換成最新的資料`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
+        break;
+      }
+      let base = cur;
+      for (const f of q.fns) { try { base = applyFn(f, base); } catch (e) { console.error(e); } }
+      base.rev = cur.rev;
+      putLocal(base);
+      rerender();
+      continue;
+    }
+    if (res.status === 409) { q.fns = []; stale(res.msg); break; }
+    if (res.status >= 400 && res.status < 500) {
+      q.fns = [];
+      setBar('save', {msg: `沒有存到：${res.msg}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}});
+      refresh({force: true});
+      break;
+    }
+    setFailing('app:' + id, true);
+    await nap(backoff(tries++));
+  }
+  setFailing('app:' + id, false);
+}
+
+/* ---------- 刪除：8 秒內可以復原 ---------- */
+const pendingDelete = new Map();
+export function removeApp(id, {toast: msg} = {}) {
+  const i = S.apps.findIndex(a => a.id === id);
+  if (i < 0) return;
+  const app = S.apps[i];
+  S.apps.splice(i, 1);
+  const timer = setTimeout(() => commitDelete(id), 8000);
+  pendingDelete.set(id, {app, index: i, timer});
+  rerender();
+  toast(msg || `已刪除 ${shortName(app)}`, {ms: 8000, undo: () => {
+    const p = pendingDelete.get(id);
+    if (!p) return;
+    clearTimeout(p.timer);
+    pendingDelete.delete(id);
+    S.apps.splice(Math.min(p.index, S.apps.length), 0, p.app);
+    rerender();
+    const q = Q.get(id);
+    if (q && q.fns.length && !q.busy) q.busy = flush(id, q).finally(() => { q.busy = null; });
+  }});
+}
+async function commitDelete(id) {
+  const p = pendingDelete.get(id);
+  if (!p) return;
+  const q = Q.get(id);
+  if (q) q.fns = [];
+  let tries = 0;
+  for (;;) {
+    try { await request('DELETE', `/api/apps/${encodeURIComponent(id)}`); break; }
+    catch (e) {
+      if (e.status === 404) break;
+      if (e.status === 409) { stale(e.message); break; }
+      if (e.status >= 400 && e.status < 500) { setBar('save', {msg: `沒有刪除：${e.message}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}}); break; }
+      setFailing('del:' + id, true);
+      await nap(backoff(tries++));
+    }
+  }
+  setFailing('del:' + id, false);
+  pendingDelete.delete(id);
+}
+// 關掉網頁時，還在復原時間內的刪除直接送出。
+addEventListener('pagehide', () => {
+  for (const id of pendingDelete.keys()) { try { fetch(`/api/apps/${encodeURIComponent(id)}`, {method: 'DELETE', keepalive: true, headers: {'X-Client': '3'}}); } catch { /* ignore */ } }
+});
+// 還有沒存到的改動就先提醒，不要直接關掉。
+addEventListener('beforeunload', e => { if ([...Q.values()].some(q => q.fns.length)) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- 設定、待辦：整份覆蓋，最後一次為準 ---------- */
+const W = new Map();
+function write(key, send) {
+  let w = W.get(key);
+  if (!w) W.set(key, w = {dirty: false, busy: null, send: null});
+  w.dirty = true; w.send = send;
+  // 回傳的 promise：存好是 true；伺服器拒絕（409、4xx）是 false。500 和斷線會一直重試，存好才 resolve。
+  if (!w.busy) w.busy = (async () => {
+    let tries = 0, ok = true;
+    while (w.dirty) {
+      w.dirty = false;
+      try { await w.send(); tries = 0; ok = true; setFailing(key, false); }
+      catch (e) {
+        if (e.status === 409) { stale(e.message); ok = false; break; }
+        if (e.status >= 400 && e.status < 500) { setBar('save', {msg: `沒有存到：${e.message}`, err: true, btn: {label: '知道了', fn: () => setBar('save', null)}}); ok = false; break; }
+        w.dirty = true; setFailing(key, true);
+        await nap(backoff(tries++));
+      }
+    }
+    setFailing(key, false);
+    w.busy = null;
+    return ok;
+  })();
+  return w.busy;
+}
+export function saveProfile(patch) {
+  S.profile = {...S.profile, ...patch};
+  rerender();
+  return write('profile', () => request('PUT', '/api/profile', S.profile));
+}
+// 先改 S.todos，再呼叫 saveTodos()。
+export function saveTodos() {
+  rerender();
+  return write('todos', () => request('PUT', '/api/todos', S.todos));
+}
+
+/* ---------- 載入 ---------- */
+const byCreated = (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
+function applyRecords(d) {
+  const server = Array.isArray(d && d.apps) ? d.apps : [];
+  const local = new Map(S.apps.map(a => [a.id, a]));
+  const queued = id => { const q = Q.get(id); return !!(q && q.fns.length); };
+  const apps = [];
+  for (const a of server) {
+    if (pendingDelete.has(a.id)) continue;               // 復原時間內的刪除不要被重新載入帶回來
+    apps.push(queued(a.id) && local.has(a.id) ? local.get(a.id) : a);
+  }
+  for (const a of S.apps) if (queued(a.id) && !server.some(x => x.id === a.id)) apps.push(a);   // 剛加、還沒存好的
+  apps.sort(byCreated);
+  const todos = Array.isArray(d && d.todos) ? d.todos : [];
+  const profile = W.get('profile') && W.get('profile').busy ? S.profile : (d && d.profile) || {};
+  const syncLog = Array.isArray(d && d.syncLog) ? d.syncLog : [];
+  const changed = !S.loaded || !sameJson(apps, S.apps) || !sameJson(todos, S.todos) || !sameJson(profile, S.profile);
+  S.apps = apps;
+  if (!(W.get('todos') && W.get('todos').busy)) S.todos = todos;
+  S.profile = profile;
+  S.syncLog = syncLog;
+  S.loaded = true;
+  return changed;
+}
+export async function loadPrograms() {
+  const [d, terms, links, season] = await Promise.all([
+    request('GET', '/data/programs.json'),
+    request('GET', '/data/search-terms.json').catch(() => null),
+    request('GET', '/data/school-links.json').catch(() => null),
+    request('GET', '/data/season.json').catch(() => null),
+  ]);
+  P.schools = Array.isArray(d.schools) ? d.schools : [];
+  P.fetched = d.fetched || '';
+  P.year = d.year || null;
+  P.source = d.source || '';
+  // 每個系組補上學校全名、代碼、地區（programs.json 只存學校的索引 s）
+  P.programs = (d.programs || []).map(p => { const s = P.schools[p.s] || {}; return Object.assign(p, {school: s.name || '', code: s.code || '', region: s.region || ''}); });
+  P.byId = new Map(P.programs.map(p => [p.i, p]));
+  if (terms) { P.aliases = terms.aliases || {}; P.synonyms = terms.synonyms || {}; P.terms = {aliases: P.aliases, synonyms: P.synonyms}; }
+  if (links) P.links = links.schools || {};
+  if (season && Array.isArray(season.events)) P.season = season.events;
+  P.loaded = true;
+}
+function applyMeta(m) {
+  S.meta = m && typeof m === 'object' ? m : {};
+  if (Array.isArray(S.meta.pdfSchools)) P.pdf = new Set(S.meta.pdfSchools);
+}
+// 第一次載入：紀錄和簡章資料都到了才 resolve（畫面要兩個都有才畫得出來）。
+export async function load() {
+  const meta = request('GET', '/api/meta').catch(() => null);
+  const progs = loadPrograms().catch(e => { console.error(e); setBar('load', {msg: '簡章資料沒有載入', err: true, btn: {label: '重新整理', fn: () => location.reload()}}); });
+  let d;
+  try { d = await request('GET', '/api/records'); }
+  catch (e) { setBar('load', {msg: '連不到伺服器', err: true, btn: {label: '重試', fn: () => location.reload()}}); throw e; }
+  applyRecords(d);
+  applyMeta(await meta);
+  await progs;
+  lastLoad = Date.now();
+  readyResolve();
+}
+// 回到網頁時重新載入（別的裝置可能改過）。「改」表單打開時不載，免得蓋掉正在打的字。
+let lastLoad = 0;
+export async function refresh({force = false} = {}) {
+  if (!S.loaded || (!force && (editing() || Date.now() - lastLoad < 2000))) return false;
+  lastLoad = Date.now();
+  wakeRetries();
+  try {
+    const [d, meta] = await Promise.all([request('GET', '/api/records'), request('GET', '/api/meta').catch(() => null)]);
+    if (!force && editing()) return false;
+    setBar('load', null);
+    if (meta) applyMeta(meta);
+    const changed = applyRecords(d);
+    if (changed) rerender();
+    return changed;
+  } catch (e) {
+    if (e.status === 0) setBar('load', {msg: '連不到伺服器', err: true, btn: {label: '重試', fn: () => refresh({force: true})}});
+    return false;
+  }
+}
+addEventListener('online', wakeRetries);
+
+/* ---------- 簡章更新的標記 ---------- */
+// syncLog：[{id, at, changes:[{appId, school, what, from, to, added?, removed?, gone?, conflict?}]}]；同步改到的日期列有 upd = 那次的 id。
+// 學校頁在打開那間時把它的標記收掉（ackSync）。
+export function syncEntries() {
+  const all = [...(S.syncLog || []), S.meta && S.meta.syncLog].filter(x => x && x.id && Array.isArray(x.changes));
+  const seen = new Set();
+  return all.filter(x => !seen.has(x.id) && seen.add(x.id));
+}
+export function syncMarks(appId) {
+  const acked = ls.get('syncAck', {});
+  return syncEntries().flatMap(x => (acked[x.id] || []).includes(appId) ? [] : x.changes.filter(c => c.appId === appId));
+}
+// 這間還沒看過的同步 id：日期列的 upd 在裡面，就在那一列寫「簡章更新」。
+export function syncUnseen(appId) {
+  const acked = ls.get('syncAck', {});
+  return new Set(syncEntries().filter(x => x.changes.some(c => c.appId === appId) && !(acked[x.id] || []).includes(appId)).map(x => x.id));
+}
+export function ackSync(appId) {
+  const acked = ls.get('syncAck', {});
+  let dirty = false;
+  for (const x of syncEntries()) if (x.changes.some(c => c.appId === appId) && !(acked[x.id] || []).includes(appId)) { (acked[x.id] = acked[x.id] || []).push(appId); dirty = true; }
+  if (dirty) ls.set('syncAck', acked);
+}
+
+/* ---------- 其他 ---------- */
+// 內網的 http 網址沒有 navigator.clipboard，退回用隱藏的 textarea 複製。
+export async function copyText(text, okMsg = '已複製') {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); toast(okMsg); return true; } } catch { /* fall through */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.append(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy'); ta.remove();
+    toast(ok ? okMsg : '沒辦法自動複製，請手動選取'); return ok;
+  } catch { toast('沒辦法自動複製，請手動選取'); return false; }
+}
+export function download(name, text, type = 'text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = Object.assign(document.createElement('a'), {href: url, download: name});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+// 配色：''（跟著系統）／'light'／'dark'。localStorage 存純字串，index.html 開頭那段會讀。
+export function setTheme(t) {
+  const on = t === 'light' || t === 'dark';
+  if (on) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  try { if (on) localStorage.setItem('theme', t); else localStorage.removeItem('theme'); } catch { /* 無痕模式 */ }
+}
+export const theme = () => document.documentElement.dataset.theme || '';
+
+// 「我的條件」：勾選的經歷，對照簡章的報名資格文字（設定、加學校共用）。關鍵字比對前會先正規化（小寫、台→臺）。
 export const CONDITIONS = [
   {group: '資訊', items: [
     {id: 'apcs', label: 'APCS 程式設計先修檢測', kw: ['apcs', '程式設計先修']},
@@ -92,441 +568,3 @@ export const CONDITIONS = [
   ]},
 ];
 export const COND_BY_ID = new Map(CONDITIONS.flatMap(g => g.items).map(c => [c.id, c]));
-
-/* ---------- 工具 ---------- */
-export const $ = (s, r = document) => r.querySelector(s);
-export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-export const clone = o => JSON.parse(JSON.stringify(o));
-export const uid = () => (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-export const pad = n => String(n).padStart(2, '0');
-export const toKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-export const parseKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
-export const todayKey = () => toKey(new Date());
-export const isKey = k => typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k);
-export const diffDays = k => Math.round((parseKey(k) - parseKey(todayKey())) / 864e5);
-export const addDays = (k, n) => { const d = parseKey(k); d.setDate(d.getDate() + n); return toKey(d); };
-export const md = k => { const d = parseKey(k); return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`; };
-export const fmtDate = k => { const d = parseKey(k); return d.getFullYear() !== new Date().getFullYear() ? `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}` : md(k); };
-export const wd = k => '週' + '日一二三四五六'[parseKey(k).getDay()];
-export const wdShort = k => '日一二三四五六'[parseKey(k).getDay()];
-export const cdText = n => n === 0 ? '今天' : n === 1 ? '明天' : n === 2 ? '後天' : n > 0 ? `${n} 天後` : `${-n} 天前`;
-export const cdClass = n => n < 0 ? '' : n <= 1 ? 'now' : n <= 5 ? 'soon' : '';
-export const numOrNull = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
-export const appName = a => a.school + (a.dept ? ' ' + a.dept : '');
-export const normName = s => String(s || '').replace(/台/g, '臺').replace(/\s+/g, '').toLowerCase();
-export const fmtMoney = n => Number(n || 0).toLocaleString('zh-TW');
-// 注音、倉頡等輸入法還在選字時，Enter 與輸入事件都不能當成「完成輸入」。
-export const composing = e => e.isComposing || e.keyCode === 229;
-// flush() 立刻執行還在等的那一次。
-export const debounce = (fn, ms) => {
-  let t = null;
-  const f = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); };
-  f.flush = (...a) => { if (t === null) return; clearTimeout(t); t = null; fn(...a); };
-  return f;
-};
-export async function request(method, url, body) {
-  const res = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
-    throw new Error(msg);
-  }
-  return res.status === 204 ? null : res.json();
-}
-let toastTimer;
-export function toast(msg) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
-}
-// 內網的 http 網址沒有 navigator.clipboard，退回用隱藏的 textarea 複製。
-export async function copyText(text, okMsg = '已複製') {
-  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); toast(okMsg); return true; } } catch { /* fall through */ }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0';
-    document.body.append(ta); ta.select(); ta.setSelectionRange(0, text.length);
-    const ok = document.execCommand('copy'); ta.remove();
-    toast(ok ? okMsg : '無法自動複製，請手動選取'); return ok;
-  } catch { toast('無法自動複製，請手動選取'); return false; }
-}
-export function download(name, text, type = 'text/plain;charset=utf-8') {
-  const url = URL.createObjectURL(new Blob([text], {type}));
-  const a = Object.assign(document.createElement('a'), {href: url, download: name});
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-/* ---------- 狀態 ---------- */
-// loaded：紀錄載入前，各畫面顯示「載入中」而不是「還沒有學校」。
-export const S = {apps: [], todos: [], profile: {}, loaded: false};
-export const P = {schools: [], programs: [], byId: new Map(), groups: [], fetched: '', year: null, pdf: new Set(), terms: {synonyms: {}, aliases: {}}, links: {}, season: []};
-// 學測、分科等大考日期（data/season.json），設定裡可以關掉。
-export const seasonItems = () => S.profile.hideExams ? [] : P.season.filter(e => isKey(e.date)).map(e => ({...e, end: isKey(e.end) && e.end > e.date ? e.end : '', last: isKey(e.end) && e.end > e.date ? e.end : e.date, season: true}));
-const renderers = new Set();
-export const onChange = fn => renderers.add(fn);
-export function rerender() { for (const fn of renderers) fn(); }
-// 學校紀錄的對話框打開時，「儲存中／已儲存」的顯示由它接手。
-export const saveHooks = {state: null};
-
-/* ---------- 儲存 ---------- */
-const inflight = {}, latest = {};
-export const saving = () => Object.keys(inflight).length > 0;
-export function persist(app) {
-  latest[app.id] = app;
-  if (inflight[app.id]) return inflight[app.id];
-  saveHooks.state && saveHooks.state(app.id, 'saving');
-  inflight[app.id] = (async () => {
-    try {
-      while (latest[app.id]) {
-        const body = latest[app.id];
-        delete latest[app.id];
-        await request('PUT', `/api/apps/${encodeURIComponent(body.id)}`, body);
-      }
-      saveHooks.state && saveHooks.state(app.id, 'saved');
-    } catch (e) {
-      delete latest[app.id];
-      saveHooks.state && saveHooks.state(app.id, 'error');
-      toast('儲存失敗：' + e.message);
-    } finally {
-      delete inflight[app.id];
-    }
-  })();
-  return inflight[app.id];
-}
-export function upsertApp(app) {
-  const i = S.apps.findIndex(a => a.id === app.id);
-  if (i >= 0) S.apps[i] = app; else S.apps.push(app);
-  rerender();
-  return persist(clone(app));
-}
-export async function removeApp(id) {
-  S.apps = S.apps.filter(a => a.id !== id);
-  rerender();
-  delete latest[id];
-  try { await inflight[id]; } catch { /* reported already */ }
-  try { await request('DELETE', `/api/apps/${encodeURIComponent(id)}`); } catch (e) { toast('刪除失敗：' + e.message); }
-}
-export async function saveProfile(patch) {
-  S.profile = {...S.profile, ...patch};
-  try { return await request('PUT', '/api/profile', S.profile); } catch (e) { toast('儲存失敗：' + e.message); }
-}
-const pushTodos = debounce(async () => { try { await request('PUT', '/api/todos', S.todos); } catch (e) { toast('待辦儲存失敗：' + e.message); } }, 300);
-export function saveTodos() { rerender(); pushTodos(); }
-
-/* ---------- 由紀錄推導 ---------- */
-export const activeApp = a => !['rejected', 'out', 'skipped'].includes(a.status);
-export const colorOf = a => Number.isInteger(a.color) ? ((a.color % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE : (Math.max(0, S.apps.indexOf(a)) % PALETTE_SIZE);
-export function nextColor() {
-  const used = S.apps.map(colorOf);
-  for (let i = 0; i < PALETTE_SIZE; i++) if (!used.includes(i)) return i;
-  return S.apps.length % PALETTE_SIZE;
-}
-// 報名截止的備註裡有「（10/14 10:00 起）」就推出一個「報名開始」的日期（只用來顯示，不存檔）。
-function derivedOpen(e, a) {
-  if (e.kind !== 'reg' || !isKey(e.date)) return null;
-  const m = /[（(](\d{1,2})\/(\d{1,2})(?:\s+(\d{2}:\d{2}))?\s*起[）)]/.exec(e.note || '');
-  if (!m) return null;
-  const y = Number(e.date.slice(0, 4)), mm = Number(m[1]), dd = Number(m[2]);
-  const key = `${mm > Number(e.date.slice(5, 7)) ? y - 1 : y}-${pad(mm)}-${pad(dd)}`;
-  if (!isKey(key) || key > e.date) return null;
-  return {id: e.id + ':open', kind: 'open', date: key, end: '', last: key, time: m[3] || '', note: '', app: a, derived: true};
-}
-// 已經錄取的學校不用再看「備取遞補」；沒錄取、沒報名的學校所有日期都不用再看。
-function relevant(e, a) {
-  if (!activeApp(a)) return false;
-  if (a.status === 'admitted' && e.kind === 'wait') return false;
-  if (e.kind === 'interview' && a.ivSkip) return false;
-  return true;
-}
-export function allEvents(opts = {}) {
-  const out = [];
-  for (const a of S.apps) for (const e of a.dates || []) {
-    if (!isKey(e.date) || !KINDS[e.kind]) continue;
-    if (opts.live && !relevant(e, a)) continue;
-    const end = isKey(e.end) && e.end > e.date ? e.end : '';
-    out.push({...e, end, last: end || e.date, app: a});
-    const op = opts.live && derivedOpen(e, a);
-    if (op && op.date >= todayKey()) out.push(op);
-  }
-  return out.sort((x, y) => x.date.localeCompare(y.date) || (x.time || '99').localeCompare(y.time || '99'));
-}
-export const focusDate = ev => ev.date >= todayKey() ? ev.date : ev.last;
-export function upcoming(list = allEvents()) {
-  const t = todayKey();
-  return list.filter(ev => ev.last >= t).sort((a, b) => focusDate(a).localeCompare(focusDate(b)) || (a.time || '99').localeCompare(b.time || '99'));
-}
-// 只算還要追的日期：進行中的學校、和目前狀態有關的日期、推出來的「報名開始」。
-export const liveEvents = () => allEvents({live: true});
-export function firstDate(app, kinds) {
-  const t = todayKey();
-  const ds = (app.dates || []).filter(d => kinds.includes(d.kind) && isKey(d.date)).sort((a, b) => a.date.localeCompare(b.date));
-  return ds.find(d => (d.end || d.date) >= t) || ds[ds.length - 1] || null;
-}
-export const nextEventOf = a => upcoming(allEvents().filter(ev => ev.app.id === a.id))[0] || null;
-export function clashes() {
-  const t = todayKey(), map = {};
-  for (const ev of liveEvents()) if ((ev.kind === 'interview' || ev.kind === 'exam') && ev.date >= t && !ev.derived) (map[ev.date] ||= []).push(ev);
-  return Object.entries(map).filter(([, evs]) => new Set(evs.map(e => e.app.id)).size > 1).map(([date, evs]) => ({date, evs}));
-}
-export const chosenSchool = () => S.apps.find(a => a.choice === 'attend' && ['admitted', 'waitlist'].includes(a.status)) || null;
-// 需要注意的事，依嚴重程度排序。每一條都連到一間學校。
-export function alerts() {
-  const out = [], t = todayKey();
-  for (const c of clashes()) out.push({crit: true, app: c.evs[0].app, text: `${fmtDate(c.date)} 面試撞期：${c.evs.map(e => e.app.school).join('、')}`});
-  for (const a of S.apps) {
-    const reg = firstDate(a, ['reg']);
-    if (a.status === 'prep' && reg && reg.date >= t && diffDays(reg.date) <= 5) out.push({crit: diffDays(reg.date) <= 1, app: a, text: `${appName(a)} 報名${diffDays(reg.date) === 0 ? '今天' : ' ' + cdText(diffDays(reg.date))}${reg.time ? ' ' + reg.time : ''} 截止，還沒報名`});
-    if (a.status === 'prep' && reg && reg.date < t && diffDays(reg.date) >= -14) out.push({app: a, text: `${appName(a)} 報名已在 ${fmtDate(reg.date)} 截止，還是「準備中」。點進去確認有沒有報名`});
-    const left = (a.docs || []).filter(d => !d.done).length;
-    const due = firstDate(a, ['upload', 'letter']) || reg;
-    if (left && due && due.date >= t && diffDays(due.date) <= 7 && ['prep', 'applied'].includes(a.status)) out.push({app: a, text: `${appName(a)} 還有 ${left} 項備審沒完成，${fmtDate(due.date)} 截止`});
-    if ((a.status === 'admitted' || a.status === 'waitlist') && !a.choice) {
-      const cf = firstDate(a, ['confirm']);
-      if (cf && cf.date >= t && diffDays(cf.date) <= 14) out.push({crit: diffDays(cf.date) <= 3, app: a, text: `${appName(a)} 要在 ${fmtDate(cf.date)} 前決定是否就讀`});
-    }
-    if (a.status === 'admitted' && a.choice === 'decline' && !a.giveupDone) {
-      const g = firstDate(a, ['giveup']);
-      out.push({crit: true, app: a, text: `${appName(a)} 記得${g ? `在 ${fmtDate(g.date)} 前` : ''}辦理放棄，否則不能參加其他管道`});
-    }
-  }
-  // 決定要讀某一間之後，其他正取、備取的學校都要在期限內放棄。
-  const going = chosenSchool();
-  if (going) for (const a of S.apps) {
-    if (a.id === going.id || !['admitted', 'waitlist'].includes(a.status) || a.choice === 'decline') continue;
-    const g = firstDate(a, ['giveup']);
-    out.push({crit: !!g && diffDays(g.date) <= 7, app: a, text: `你決定讀 ${appName(going)}，${appName(a)} 的${a.status === 'admitted' ? '正取' : '備取'}也要辦理放棄${g ? `（${fmtDate(g.date)}${g.time ? ' ' + g.time : ''} 前）` : ''}`});
-  }
-  return out.sort((x, y) => (y.crit ? 1 : 0) - (x.crit ? 1 : 0));
-}
-
-/* ---------- 簡章資料 ---------- */
-export const progReg = p => { const r = (p.ev || []).find(e => e[0] === 'reg'); return r ? {start: r[1], end: r[2] || r[1], time: r[4] || (!r[2] ? r[3] : '') || ''} : null; };
-// 各校招生網與報名系統（data/school-links.json），用學校名稱找。
-export function schoolLinks(name) {
-  const s = P.schools.find(x => x.name === name);
-  return s && P.links[s.code] ? P.links[s.code] : null;
-}
-export const extLink = (href, label, cls = 'btn sm ext') => `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
-// 簡章 PDF 只有執行過 build-data 的伺服器才有；沒有就不顯示 PDF 連結。
-export const pdfUrl = (code, page) => P.pdf.has(code) ? `/data/brochures/pdf/${code}.pdf${page ? '#page=' + page : ''}` : null;
-export const pev = (p, kinds) => (p.ev || []).find(e => kinds.includes(e[0])) || null;
-export const needsLetter = p => !!p.rl && /^[暗明]/.test(p.rl) && !/非必繳|選繳/.test(p.rl);
-export const isTest = n => /筆試|術科|實作|測驗|展演|專長/.test(n);
-export const itemClass = n => isTest(n) ? 'test' : /面試|口試/.test(n) ? 'iv' : /審查|書面|書審|資料/.test(n) ? 'doc' : 'other';
-export const rlText = rl => rl === 'N' ? '不需要' : rl.replace(/^暗/, '暗推').replace(/^明/, '明推');
-// 簡章的繳交資料說明很長，清單只留名稱：「自傳(含學習歷程描述…)」→「自傳」。
-export function shortDoc(t) {
-  let cut = -1;
-  for (const m of t.matchAll(/[（(：:，,]/g)) {
-    if (m.index < 2) continue;
-    if (/[（(]/.test(m[0])) { const close = t.slice(m.index + 1).search(/[）)]/); if (close >= 0 && close <= 3) continue; }
-    cut = m.index; break;
-  }
-  let n = cut > 0 ? t.slice(0, cut) : t;
-  n = n.replace(/^(現為|依|本系|本校)/, '').trim();
-  if (n.length > 28) n = n.slice(0, 28) + '…';
-  return n || t.slice(0, 28);
-}
-export const docListHtml = p => (p.docs || []).length ? `<div class="p-sec"><h4>簡章要求繳交的資料<span class="src">自動節錄，請對照簡章</span></h4><ol class="doc-req">${p.docs.map(d => `<li>${esc(d)}</li>`).join('')}</ol></div>` : '';
-export const mine = pid => S.apps.find(a => a.programId === pid);
-export const regKey = p => { const t = todayKey(); return !p._reg ? '9' : p._reg.end >= t ? '0' + p._reg.end : '1' + p.i; };
-// 「資安外加 資訊工程學系」→ 學系名稱「資訊工程學系」＋ 招生組別「資安外加」
-export function splitName(n) {
-  const quals = [];
-  let main = '';
-  for (const tok of String(n || '').split(' ')) {
-    if (/(系|學程|學士班|學院|學群)/.test(tok) && tok.length > main.length) { if (main) quals.push(main); main = tok; } else quals.push(tok);
-  }
-  if (!main) main = n || '';
-  const paren = /[(（]([^)）]+)[)）]$/.exec(main);
-  if (paren) { quals.push(paren[1]); main = main.slice(0, paren.index); }
-  const letter = /([A-Z甲乙丙丁]組)$/.exec(main);
-  if (letter && main.length > letter[1].length + 2) { quals.unshift(letter[1]); main = main.slice(0, -letter[1].length); }
-  return {main, quals: quals.filter(Boolean)};
-}
-export const deptMain = a => splitName(a.dept || '').main || a.dept || '';
-// 學校簡稱：先用 data/search-terms.json 的簡稱（師大、政大、市北…），沒有的就去掉「國立」「大學」。
-const shortCache = new Map();
-export const resetShortNames = () => shortCache.clear();
-export function shortSchool(name) {
-  name = String(name || '');
-  if (!name) return '';
-  if (shortCache.has(name)) return shortCache.get(name);
-  const aliases = Object.entries(P.terms.aliases || {}).filter(([, full]) => full === name).map(([a]) => a);
-  const inName = aliases.filter(a => name.includes(a)).sort((x, y) => x.length - y.length);
-  const byLen = [...aliases].sort((x, y) => x.length - y.length);
-  let s = inName[0] || byLen[0] || name.replace(/^國立|^私立|^市立/, '').replace(/大學$/, '');
-  if (s.length < 2) s = name.replace(/大學$/, '') || name;
-  shortCache.set(name, s);
-  return s;
-}
-export const qualPills = quals => quals.map(q => `<span class="tag">${esc(q)}</span>`).join('');
-// 同一個系在幾個招生組別招生，列表上合成一列。
-export function mergeRows(list) {
-  const rows = [], byKey = new Map();
-  for (const p of list) {
-    const key = p.s + '|' + p._main;
-    let r = byKey.get(key);
-    if (!r) { r = {key, main: p._main, school: p.school, s: p.s, items: []}; byKey.set(key, r); rows.push(r); }
-    r.items.push(p);
-  }
-  return rows;
-}
-export function bySchool(rows) {
-  const groups = [], byS = new Map();
-  for (const r of rows) {
-    let g = byS.get(r.s);
-    if (!g) { g = {school: r.school, s: r.s, rows: []}; byS.set(r.s, g); groups.push(g); }
-    g.rows.push(r);
-  }
-  return groups;
-}
-export function regText(p) {
-  const r = p._reg, t = todayKey();
-  if (!r) return '';
-  if (t < r.start) return `<span class="st-soon">${fmtDate(r.start)} 開始報名</span>`;
-  if (t <= r.end) { const n = diffDays(r.end); return `<span class="st-open">報名到 ${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}・${n === 0 ? '今天截止' : `剩 ${n} 天`}</span>`; }
-  return `<span class="st-closed">已截止 ${fmtDate(r.end)}${r.time ? ' ' + r.time : ''}</span>`;
-}
-export function weightText(p) {
-  const its = (p.it || []).filter(i => i[0]);
-  const short = n => n.length <= 5 ? n : ({doc: '書審', iv: '面試', test: '考試', other: '其他'})[itemClass(n)];
-  return its.map(([n, w]) => short(n) + (w != null ? ` ${w}%` : '')).join('・');
-}
-export function progMeta(p, withQuota = true) {
-  const iv = pev(p, ['interview', 'exam']), rel = pev(p, ['release']);
-  return [withQuota && p.q != null && `名額 ${p.q}`, regText(p), iv && `${iv[0] === 'exam' ? '筆試' : '面試'} ${fmtDate(iv[1])}`, rel && `放榜 ${fmtDate(rel[1])}`, weightText(p)].filter(Boolean);
-}
-export function programDates(p) {
-  return (p.ev || []).filter(e => e[0] !== 'other').map(([kind, sd, ed, st, et, name, note]) => {
-    const extra = note ? `・${note}` : '';
-    if (DEADLINE_KINDS.has(kind) && ed) return {id: uid(), kind, date: ed, end: '', time: et || '', note: `${name}（${fmtDate(sd)}${st ? ' ' + st : ''} 起）${extra}`};
-    return {id: uid(), kind, date: sd, end: ed || '', time: st || '', note: name + extra};
-  });
-}
-// 「1,200元」「初試900；複試400」「$900(+$400)」都只取第一個數字。
-export const feeNumber = s => { const m = /\d[\d,]*/.exec(String(s ?? '')); return m ? Number(m[0].replace(/,/g, '')) : null; };
-// 報名這件事本身的步驟：報名、繳費、上傳並確認、推薦函。每一步都是一個會漏掉的坑。
-export function regStepsFor(p) {
-  const steps = ['網路報名完成'];
-  if (!p || (p.ev || []).some(e => e[0] === 'pay') || /報名費|繳費/.test(String(p && p.fee || ''))) steps.push('繳費完成，留著收執聯');
-  steps.push('備審上傳完成，並按「確認送出」');
-  if (!p || (p.ev || []).some(e => e[0] === 'letter') || (p.rl && /^[暗明]/.test(p.rl))) steps.push('推薦函已送出（確認老師收到系統信）');
-  return steps.map(n => ({id: uid(), name: n, done: false}));
-}
-export function appFromProgram(p) {
-  const m = new Set();
-  for (const [n] of p.it || []) {
-    if (/審查|書面|書審|資料/.test(n)) m.add('資料審查');
-    if (/面試|口試/.test(n)) m.add('面試');
-    if (/筆試|測驗/.test(n)) m.add('筆試');
-    if (/術科|實作|展演|專長/.test(n)) m.add('實作／術科');
-  }
-  // 簡章有列「指定繳交資料」就用簡章的清單，否則用通用清單。
-  const docs = (p.docs || []).length ? p.docs.map(shortDoc) : ['自傳／個人陳述', '讀書計畫', '特殊表現證明文件', '系所指定其他資料'];
-  if (p.pf === 'Y' && !docs.some(x => /作品/.test(x))) docs.push('作品集' + (p.pfd ? `（${fmtDate(p.pfd)} 前）` : ''));
-  if (p.rl && /^[暗明]/.test(p.rl) && !docs.some(x => /推薦/.test(x))) docs.push(`推薦信（${rlText(p.rl)}）`);
-  return {
-    id: uid(), school: p.school, dept: p.n, programId: p.i, status: 'prep', color: nextColor(), methods: METHODS.filter(x => m.has(x)),
-    fee: feeNumber(p.fee), quota: p.q ?? null, url: /^https?:\/\//.test(p.u || '') ? p.u : '',
-    dates: programDates(p), docs: docs.map(n => ({id: uid(), name: n, done: false})), regSteps: regStepsFor(p),
-    notes: [p.ph && `諮詢電話：${p.ph}`, p.em && `諮詢信箱：${p.em}`].filter(Boolean).join('\n'),
-    place: p.loc || '', kit: DEFAULT_KIT.map(n => ({id: uid(), name: n, done: false})),
-    prep: '', asked: '', choice: '', waitNo: null, confirmDone: false, giveupDone: false, createdAt: Date.now(),
-  };
-}
-export function blankApp() {
-  return {id: uid(), school: '', dept: '', status: 'prep', color: nextColor(), methods: ['資料審查', '面試'], fee: null, quota: null, url: '', dates: [], docs: DEFAULT_DOCS.map(n => ({id: uid(), name: n, done: false})), regSteps: regStepsFor(null), notes: '', place: '', kit: DEFAULT_KIT.map(n => ({id: uid(), name: n, done: false})), prep: '', asked: '', choice: '', waitNo: null, confirmDone: false, giveupDone: false, createdAt: Date.now()};
-}
-export const condText = p => p._cond !== undefined ? p._cond : (p._cond = normName([p.qx, p.tgt, p.deb, p.deo, p.nt, p.pr].filter(Boolean).join(' ')));
-// 這個系的報名資格提到了我勾選的哪些條件
-export function matchedConds(p) {
-  const tags = (S.profile.tags || []).map(id => COND_BY_ID.get(id)).filter(Boolean);
-  if (!tags.length) return [];
-  const text = condText(p);
-  return tags.filter(c => c.kw.some(k => text.includes(normName(k))));
-}
-
-/* ---------- 下一步：依目前進度，告訴使用者該做什麼 ---------- */
-export function nextStep(a) {
-  const d = kinds => firstDate(a, kinds);
-  const t = todayKey();
-  const when = x => `${fmtDate(x.date)}${x.time ? ' ' + x.time : ''}（${cdText(diffDays(x.date))}）`;
-  const left = (a.docs || []).filter(x => !x.done).length;
-  const L = schoolLinks(a.school) || {};
-  // 文案原則：日期在前、不解釋按鈕（按鈕本身就是說明）。
-  switch (a.status) {
-    case 'prep': {
-      const reg = d(['reg']);
-      const go = L.apply ? [{label: '報名系統', href: L.apply}] : L.adm ? [{label: '招生網', href: L.adm}] : [];
-      const act = [...go, {label: '已報名', set: {status: 'applied'}, primary: true}];
-      if (reg && reg.date >= t) return {text: `${when(reg)} 報名截止${left ? `，備審還有 ${left} 項沒做` : ''}。`, actions: act};
-      if (reg) return {text: `報名已在 ${when(reg).replace(/（.*）/, '')} 截止。報了嗎？`, actions: [{label: '已報名', set: {status: 'applied'}, primary: true}, {label: '沒有報名', set: {status: 'skipped'}}]};
-      return {text: '還沒有報名截止日，到「報名與日期」補上。', actions: act};
-    }
-    case 'skipped':
-      return {tone: 'calm', text: '沒有報名，不會再提醒。', actions: [{label: '其實有報名', set: {status: 'applied'}}]};
-    case 'applied': {
-      const up = d(['upload', 'letter']), s1 = d(['stage1']), iv = d(['interview', 'exam', 'window']);
-      if (left && up && up.date >= t) return {text: `${when(up)} 繳件截止，備審還有 ${left} 項沒完成。`, actions: [{label: '備審清單', tab: 'docs', primary: true}]};
-      if (s1 && s1.date >= t) return {text: `${when(s1)} 公布一階名單。`, actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
-      if (iv && (iv.end || iv.date) >= t) return {text: `${when(iv)} 面試。`, actions: [{label: '準備面試', tab: 'interview'}, {label: '要面試了', set: {status: 'interview'}, primary: true}]};
-      return {text: '等一階結果。', actions: [{label: '通過一階', set: {status: 'interview'}, primary: true}, {label: '沒通過', set: {status: 'out'}}]};
-    }
-    case 'interview': {
-      const iv = d(['interview', 'exam', 'window']);
-      return {text: iv ? `${when(iv)} 面試${a.place ? `・${a.place}` : ''}。` : '還沒有面試日期，到「面試」補上。', actions: [{label: '準備面試', tab: 'interview'}, {label: '面試完了', set: {status: 'waiting'}, primary: true}]};
-    }
-    case 'waiting': {
-      const rel = d(['release']);
-      return {text: rel ? `${when(rel)} 放榜。結果：` : '結果：', actions: [{label: '正取', set: {status: 'admitted'}}, {label: '備取', set: {status: 'waitlist'}}, {label: '未錄取', set: {status: 'rejected'}}]};
-    }
-    case 'admitted':
-    case 'waitlist': {
-      const cf = d(['confirm']), g = d(['giveup']);
-      const head = a.status === 'admitted' ? '正取！' : `備取${a.waitNo ? `第 ${a.waitNo} 名` : ''}。`;
-      const other = chosenSchool();
-      if (!a.choice && other && other.id !== a.id) return {tone: 'danger', text: `你決定讀 ${appName(other)}，這間要${g ? `在 ${when(g)} 前` : '在期限內'}辦理放棄，否則會影響其他管道。`, actions: [{label: '放棄這間', set: {choice: 'decline'}, primary: true}, {label: '改讀這間', set: {choice: 'attend'}}], wait: a.status === 'waitlist'};
-      if (!a.choice) return {text: `${head}${cf ? `${when(cf)} 前決定讀不讀。` : '決定讀不讀。'}`, actions: [{label: '要去讀', set: {choice: 'attend'}, primary: true}, {label: '放棄', set: {choice: 'decline'}}], wait: a.status === 'waitlist'};
-      if (a.choice === 'attend') return {tone: 'calm', text: a.confirmDone ? '已報到。' : `${cf ? `${when(cf)} 前` : ''}完成聲明就讀或報到。`, check: ['confirmDone', '已完成報到'], actions: [{label: '改變決定', set: {choice: ''}}], wait: a.status === 'waitlist'};
-      return {tone: 'danger', text: `放棄要在${g ? ` ${when(g)} 前` : '學校規定期限內'}辦理，否則不能參加繁星、申請入學和分發入學。`, check: ['giveupDone', '已交出放棄聲明'], actions: [{label: '改變決定', set: {choice: ''}}]};
-    }
-    case 'rejected':
-    case 'out':
-      return {tone: 'calm', text: a.status === 'out' ? '一階未通過。' : '未錄取。', actions: []};
-  }
-  return {text: '', actions: []};
-}
-
-/* ---------- 載入 ---------- */
-export async function loadRecords() {
-  const d = await request('GET', '/api/records');
-  S.loaded = true;
-  S.apps = (d.apps || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  S.todos = Array.isArray(d.todos) ? d.todos : [];
-  S.profile = d.profile || {};
-  rerender();
-}
-export async function loadPrograms() {
-  const [d, terms, links, meta, season] = await Promise.all([request('GET', '/data/programs.json'), request('GET', '/data/search-terms.json').catch(() => null), request('GET', '/data/school-links.json').catch(() => null), request('GET', '/api/meta').catch(() => null), request('GET', '/data/season.json').catch(() => null)]);
-  if (meta) { P.year = meta.year; P.pdf = new Set(meta.pdfSchools || []); }
-  if (season && Array.isArray(season.events)) P.season = season.events;
-  if (terms) P.terms = {synonyms: terms.synonyms || {}, aliases: terms.aliases || {}};
-  resetShortNames();
-  if (links) P.links = links.schools || {};
-  P.schools = d.schools;
-  P.fetched = d.fetched;
-  P.programs = d.programs.map(p => {
-    const s = d.schools[p.s], {main, quals} = splitName(p.n);
-    return {...p, school: s.name, code: s.code, _region: s.region, _reg: progReg(p), _main: main, _quals: quals};
-  });
-  P.byId = new Map(P.programs.map(p => [p.i, p]));
-  const g = {};
-  for (const p of P.programs) if (p.g) g[p.g] = (g[p.g] || 0) + 1;
-  P.groups = Object.entries(g).sort((a, b) => b[1] - a[1]);
-  rerender();
-}

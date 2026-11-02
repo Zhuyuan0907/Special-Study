@@ -1,21 +1,61 @@
-// 畫面切換：本週 / 學校 / 備審 / 行事曆 / 找科系。網址列的 # 會跟著變，重新整理會回到同一個畫面。
-const handlers = new Set();
-export const VIEWS = ['week', 'schools', 'docs', 'calendar', 'finder'];
-export const route = {view: 'week', params: {}};
-export function onView(fn) { handlers.add(fn); }
-export function go(view, params = {}) {
-  if (!VIEWS.includes(view)) view = 'week';
-  route.view = view;
-  route.params = params;
-  const hash = '#' + view + (params.id ? '/' + encodeURIComponent(params.id) : '') + (params.q ? '?q=' + encodeURIComponent(params.q) : '');
-  if (location.hash !== hash) history.replaceState(null, '', hash);
-  for (const fn of handlers) fn(view, params);
+// 網址：#next（預設）、#schools、#schools/<id>、#calendar、#calendar/2026-11。
+// 用 pushState，所以上一頁／下一頁能在畫面之間來回；重新整理會回到同一個畫面。
+// 舊網址：#week → #next、#docs → #schools、#finder → #next 並打開加學校。
+export const VIEWS = ['next', 'schools', 'calendar'];
+// route.open：'add' 表示要順便打開加學校（舊的 #finder），pid 是要先選好的系組。
+export const route = {view: 'next', id: '', month: '', open: '', pid: ''};
+const subs = new Set();
+export const onRoute = fn => { subs.add(fn); return () => subs.delete(fn); };
+
+export function parse(hash) {
+  const m = /^#?([a-z]*)(?:\/([^?]*))?/i.exec(hash || '');
+  const name = (m && m[1] || '').toLowerCase();
+  let arg = '';
+  try { arg = m && m[2] ? decodeURIComponent(m[2]) : ''; } catch { arg = ''; }
+  const r = {view: 'next', id: '', month: '', open: '', pid: '', legacy: false};
+  if (name === 'schools') return {...r, view: 'schools', id: arg};
+  if (name === 'calendar') return {...r, view: 'calendar', month: /^\d{4}-\d{2}$/.test(arg) ? arg : ''};
+  if (name === 'docs') return {...r, view: 'schools', legacy: true};
+  if (name === 'finder') return {...r, open: 'add', pid: arg, legacy: true};
+  if (name === 'next') return r;
+  return {...r, legacy: !!name && name !== 'next'};       // #week、#home、亂打的都回到接下來
 }
-export function fromHash() {
-  const m = /^#(\w+)(?:\/([^?]+))?(?:\?q=(.*))?$/.exec(location.hash || '');
-  if (!m || !VIEWS.includes(m[1])) return {view: 'week', params: {}};
-  const params = {};
-  if (m[2]) params.id = decodeURIComponent(m[2]);
-  if (m[3]) params.q = decodeURIComponent(m[3]);
-  return {view: m[1], params};
+export function href(view, arg = '') {
+  return '#' + (VIEWS.includes(view) ? view : 'next') + (arg ? '/' + encodeURIComponent(arg) : '');
 }
+const canon = r => href(r.view, r.view === 'schools' ? r.id : r.view === 'calendar' ? r.month : '');
+const same = (a, b) => a.view === b.view && a.id === b.id && a.month === b.month;
+
+function set(r, how) {
+  const h = canon(r);
+  if (how && location.hash !== h) history[how === 'replace' ? 'replaceState' : 'pushState'](null, '', h);
+  Object.assign(route, {view: r.view, id: r.id || '', month: r.month || '', open: r.open || '', pid: r.pid || ''});
+}
+const emit = () => { for (const fn of [...subs]) fn(route); };
+
+// go('#schools/abc')、go({view:'schools', id:'abc'})、go('#calendar/2026-12', {replace:true})
+export function go(target, {replace = false} = {}) {
+  const r = typeof target === 'string' ? parse(target) : {...parse(href(target.view)), ...target, legacy: false};
+  if (same(r, route) && !r.open && location.hash === canon(r)) return;
+  set(r, replace || r.legacy ? 'replace' : 'push');
+  emit();
+}
+// 只改網址列、不重畫（例如 #schools 自己選了第一間學校，網址補成 #schools/<id>）。
+export function setUrl(target) {
+  const r = typeof target === 'string' ? parse(target) : {...parse(href(target.view)), ...target};
+  set(r, 'replace');
+}
+// 啟動時讀網址；舊網址換成新的（replace，不多一筆上一頁）。不通知，app.js 自己畫第一次。
+export function start() {
+  const r = parse(location.hash);
+  set(r, r.legacy || !location.hash ? 'replace' : '');
+  return route;
+}
+function onPop() {
+  const r = parse(location.hash);
+  if (same(r, route) && !r.open) return;
+  set(r, r.legacy ? 'replace' : '');
+  emit();
+}
+addEventListener('popstate', onPop);
+addEventListener('hashchange', onPop);

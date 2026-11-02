@@ -10,6 +10,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test test/",
     "build-data": "node scripts/build-data.mjs",
     "build-data:offline": "node scripts/build-data.mjs --offline"
   },

@@ -1,0 +1,154 @@
+/* 學校（js/schools.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   所有選擇器都掛在 #view-schools 底下：各畫面的 css 一起載入，不要互相影響。 */
+#view-schools { display: grid; grid-template-columns: 268px minmax(0, 1fr); }
+
+/* ---------- 左邊：學校清單 ---------- */
+#view-schools .s-rail { border-right: 1px solid var(--line); padding: 14px 0 16px 24px; min-height: 0; }
+#view-schools .s-rr { display: grid; grid-template-columns: 3px minmax(0, 1fr) auto; column-gap: 12px; padding: 9px 16px 9px 12px; border-bottom: 1px solid var(--line); color: inherit; }
+#view-schools .s-rr:hover { background: var(--bg-2); }
+#view-schools .s-rr.tint { background: var(--tint); }
+#view-schools .s-rr .bar-hue { grid-row: 1 / 3; }
+#view-schools .s-rr-n { display: flex; align-items: baseline; gap: 8px; min-width: 0; line-height: 22px; }
+#view-schools .s-rr-n b { font-size: 15px; font-weight: 600; white-space: nowrap; }
+#view-schools .s-rr-n span { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+#view-schools .s-rr-w { font-size: 13px; line-height: 22px; color: var(--ink-2); white-space: nowrap; }
+#view-schools .s-rr-w.hot { color: var(--accent); font-weight: 600; }
+#view-schools .s-rr-d { grid-column: 2 / 4; font-size: 13px; line-height: 18px; color: var(--ink-3); }
+#view-schools .s-end { margin: 18px 16px 4px 12px; font-size: 12px; line-height: 18px; color: var(--ink-3); }
+#view-schools .s-none { padding: 40px 36px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; grid-column: 1 / -1; }
+
+/* ---------- 右邊 ---------- */
+#view-schools .s-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 20px 36px 0 32px; }
+#view-schools .s-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex: none; }
+#view-schools .s-id { min-width: 0; }
+#view-schools .s-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 12px; min-width: 0; }
+#view-schools .s-title .dot { width: 10px; height: 10px; align-self: center; }
+#view-schools .s-title h1 { font-size: 20px; line-height: 30px; font-weight: 600; }
+#view-schools .s-dept { font-size: 13px; line-height: 20px; color: var(--ink-2); }
+#view-schools .s-links { display: flex; flex-wrap: wrap; gap: 2px 18px; margin-top: 2px; line-height: 20px; }
+#view-schools .s-side { display: flex; align-items: center; gap: 2px; flex: none; }
+#view-schools .s-status { height: 32px; padding: 0 8px; border: 0; border-radius: var(--r); background: none; font-size: 15px; color: var(--ink-2); white-space: nowrap; }
+#view-schools .s-status::after { content: "▾"; margin-left: 6px; font-size: 12px; color: var(--ink-3); }
+#view-schools .s-status:hover, #view-schools .s-status[aria-expanded="true"] { background: var(--bg-2); color: var(--ink); }
+
+/* 下一步：32px 的日子 + 20px 的事；部分直接在這裡勾 */
+#view-schools .s-next { flex: none; padding: 16px 0 18px; border-bottom: 1px solid var(--line); }
+#view-schools .s-next:focus { outline: none; }
+#view-schools .s-next-h { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-nl { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 20px; margin-top: 2px; min-width: 0; }
+#view-schools .s-day { font-size: 32px; line-height: 40px; font-weight: 600; white-space: nowrap; letter-spacing: .01em; }
+#view-schools .s-day.hot { color: var(--accent); }
+#view-schools .s-tm { font-size: 20px; line-height: 34px; font-weight: 600; white-space: nowrap; }
+#view-schools .s-what { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 26px; min-width: 0; font-size: 20px; line-height: 34px; }
+#view-schools .s-lab { font-weight: 600; }
+#view-schools .s-next.tent .s-lab { color: var(--ink-2); font-weight: 400; }
+#view-schools .s-own { margin-left: 8px; font-size: 15px; color: var(--ink-3); white-space: nowrap; }
+#view-schools .s-optp { color: var(--ink-3); }
+#view-schools .s-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-left: auto; align-self: center; }
+#view-schools .s-next-sub { margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-nothing { font-size: 20px; line-height: 34px; color: var(--ink-2); }
+#view-schools .s-ask { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 12px; font-size: 15px; line-height: 24px; }
+#view-schools .s-ask label { display: inline-flex; align-items: center; gap: 8px; }
+#view-schools .s-ask .s-num { width: 5em; }
+#view-schools .s-ask input { height: 30px; }
+#view-schools .s-acts .btn.on { background: var(--bg-2); border-color: var(--ink-2); }
+
+/* 兩欄：我的（15px）｜簡章（13px 灰） */
+#view-schools .s-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); }
+#view-schools .s-mine { padding: 20px 40px 28px 0; min-width: 0; }
+#view-schools .s-ref { padding: 20px 0 28px 32px; border-left: 1px solid var(--line); min-width: 0; }
+
+/* 時程 */
+#view-schools .s-tr { display: grid; grid-template-columns: 7.2em 6.4em minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 3px 0; line-height: 24px; }
+#view-schools .s-tr .d { white-space: nowrap; }
+#view-schools .s-tr .t { white-space: nowrap; color: var(--ink-2); }
+#view-schools .s-tr .t.unk { font-size: 13px; color: var(--ink-3); }
+#view-schools .s-tr .w { min-width: 0; overflow-wrap: anywhere; }
+#view-schools .s-tr .w small, #view-schools .s-tr .w .edited { margin-left: 8px; font-size: 13px; color: var(--ink-3); }
+#view-schools .s-tr .w .edited { color: var(--ink-2); }
+#view-schools .s-tr.today .d { color: var(--accent); font-weight: 600; }
+#view-schools .s-tr.next .l { font-weight: 600; }
+#view-schools .s-tr.past, #view-schools .s-tr.past .t, #view-schools .s-tr.past .edited { color: var(--ink-3); }
+#view-schools .s-sync, #view-schools .s-hid { margin-top: 6px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-hid .link { margin-left: 4px; }
+/* 時程的「改」：日期｜時間｜名稱｜還原｜✕，和閱讀時同一個順序 */
+#view-schools .s-ef { display: flex; flex-direction: column; gap: 6px; }
+#view-schools .s-er { --cols: 9.6em 5.2em minmax(0, 1fr) 2.6em 24px; }
+#view-schools .s-er input.tm { width: 100%; }
+/* 沒有時間的列：空白就是空白，不要讓「17:00」的提示看起來像真的時間；點進去才看到格式 */
+#view-schools .s-er input.tm:not(:focus)::placeholder { color: transparent; }
+#view-schools .s-er .s-fl { display: block; padding: 0 2px; line-height: 30px; color: var(--ink-2); }
+
+/* 備審 */
+#view-schools .s-dl li { padding: 3px 0; line-height: 24px; }
+#view-schools .s-dl .check > span { min-width: 0; overflow-wrap: anywhere; }
+#view-schools .s-dd { margin-left: 4px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-def li { --cols: minmax(0, 1fr) 24px; padding: 2px 0; }
+#view-schools .s-def input { height: 30px; }
+
+/* 紀錄 */
+#view-schools .s-kv { display: grid; grid-template-columns: 7.2em minmax(0, 1fr); column-gap: 8px; }
+#view-schools .s-kv dt, #view-schools .s-kv > label { padding: 5px 0 3px; font-size: 13px; line-height: 20px; color: var(--ink-3); }
+#view-schools .s-kv dd { padding: 3px 0; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#view-schools .s-kv-ed { row-gap: 6px; }
+#view-schools .s-kv-ed > div { min-width: 0; }
+#view-schools .s-kv-ed input:not(.tm), #view-schools .s-kv-ed textarea { width: 100%; }
+#view-schools .s-rec > .link { font-size: 15px; }
+
+/* 簡章 */
+#view-schools .s-rl { display: grid; grid-template-columns: 5.6em minmax(0, 1fr) auto; column-gap: 14px; row-gap: 12px; font-size: 13px; line-height: 20px; }
+#view-schools .s-rl dt { color: var(--ink-3); white-space: nowrap; }
+#view-schools .s-rl dd { color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+#view-schools .s-rl dd .link { font-size: 12px; margin-top: 2px; }
+#view-schools .s-pg { text-align: right; }
+
+/* 顏色選單裡，同色的其他學校 */
+.menu .s-cm { margin-left: auto; padding-left: 16px; font-size: 12px; color: var(--ink-3); }
+
+/* ---------- 視窗不夠寬：兩欄變一欄（頁面整頁捲） ---------- */
+@media (max-width: 1180px) {
+  #view-schools { grid-template-columns: 220px minmax(0, 1fr); }
+  #view-schools .s-rail { padding-left: 16px; }
+  #view-schools .s-page { padding: 20px 24px 0 24px; }
+  #view-schools .s-cols { grid-template-columns: minmax(0, 1fr); }
+  #view-schools .s-mine { padding-right: 0; }
+  #view-schools .s-ref { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 28px; }
+}
+/* ---------- 手機：學校名排成一行一行，點了換學校 ---------- */
+@media (max-width: 600px) {
+  #view-schools { display: block; }
+  #view-schools .s-rail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  #view-schools .s-rr { display: inline-block; padding: 2px 8px; border: 0; border-radius: var(--r); }
+  #view-schools .s-rr .bar-hue, #view-schools .s-rr-n span, #view-schools .s-rr-w, #view-schools .s-rr-d { display: none; }
+  #view-schools .s-rr-n b { color: var(--hue); }
+  #view-schools .s-end { margin: 0 0 0 8px; }
+  #view-schools .s-page { padding: 16px 16px 0; }
+  #view-schools .s-head { gap: 8px; }
+  #view-schools .s-acts { margin-left: 0; }
+  #view-schools .s-tr { grid-template-columns: 6.6em 5.6em minmax(0, 1fr); column-gap: 6px; }
+  #view-schools .s-er { grid-template-columns: minmax(0, 1fr) 5.2em 2.6em 24px; }
+  #view-schools .s-er .d { grid-column: 1; grid-row: 1; }
+  #view-schools .s-er input.tm { grid-column: 2; grid-row: 1; }
+  #view-schools .s-er .r { grid-column: 3; grid-row: 1; }
+  #view-schools .s-er .x { grid-column: 4; grid-row: 1; }
+  #view-schools .s-er .l { grid-column: 1 / -1; grid-row: 2; }
+  #view-schools .s-kv { grid-template-columns: 6.6em minmax(0, 1fr); }
+}
+
+/* ---------- 列印這一間（#print 裡的內容；style.css 已經把頁面其他部分藏起來） ---------- */
+@media print {
+  /* 舊版的空白：main 在列印時還保留螢幕高度。這裡再保險一次 */
+  main, .view { height: auto !important; min-height: 0 !important; }
+  @page { margin: 14mm 12mm; }
+  #print .sp h1 { font-size: 17px; }
+  #print .sp td.sp-d { width: 92px; white-space: nowrap; }
+  #print .sp td.sp-t { width: 72px; white-space: nowrap; }
+  #print .sp tr.sp-past td { color: #888; }
+  #print .sp small { font-size: 10px; color: #555; }
+  #print .sp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+  #print .sp-docs { list-style: none; padding-left: 0; }
+  #print .sp-docs li { margin-bottom: 4px; break-inside: avoid; }
+  #print .sp-dl { display: grid; grid-template-columns: 76px 1fr; gap: 4px 12px; font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
+  #print .sp-dl dt { color: #555; }
+  #print .sp-dl dd { margin: 0; white-space: pre-wrap; }
+}

@@ -1,0 +1,66 @@
+/* 設定（js/settings.js）的樣式。共用的色彩、字級、按鈕、勾選框、「改」表單在 ../style.css；規則見 docs/ui-conventions.md。
+   版面：左邊六項（選到的用 --tint），右邊一頁（自己捲動），底下一行簡章資料來源。每頁是「小標｜內容」兩欄的列。 */
+.set { --k: 96px; flex: 1; min-height: 0; display: grid; grid-template-columns: 172px minmax(0, 1fr); }
+.set-nav { display: flex; flex-direction: column; gap: 2px; padding: 14px 10px; border-right: 1px solid var(--line); }
+.set-nav button { height: 34px; padding: 0 12px; border: 0; border-radius: var(--r); background: none; color: var(--ink-2); font-size: 15px; text-align: left; white-space: nowrap; }
+.set-nav button:hover { color: var(--ink); background: var(--bg-2); }
+.set-nav button[aria-selected="true"] { background: var(--tint); color: var(--ink); font-weight: 600; }
+.set-pane { padding: 18px 28px 28px; }
+
+.set-h { display: flex; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; line-height: 24px; margin-bottom: 10px; }
+.set-h .count { font-size: 13px; font-weight: 400; color: var(--ink-3); }
+.set-h .link { margin-left: auto; }
+
+/* 一列：左邊小標（13px 灰），右邊內容 */
+.set-row { display: grid; grid-template-columns: var(--k) minmax(0, 1fr); column-gap: 16px; align-items: baseline; padding: 7px 0; }
+.set-k { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.set-v { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; font-size: 15px; line-height: 24px; }
+.set-v > input[type="url"], .set-v > input[type="text"]:not(.tm) { flex: 1 1 100%; }
+.set-path { font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; }
+.set-v > input + .set-path, .set-two + .set-path { flex-basis: 100%; }
+.set-url { font: 13px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink); overflow-wrap: anywhere; user-select: all; min-width: 0; }
+.set-warn { margin: 2px 0 4px calc(var(--k) + 16px); font-size: 13px; line-height: 20px; color: var(--ink); }
+.set-pane > .form-err { margin: 2px 0 4px calc(var(--k) + 16px); }
+.set-sep { border-top: 1px solid var(--line); margin: 10px 0 4px; }
+.set-two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; flex: 1 1 100%; }
+.set-two input { width: 100%; }
+.set-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.set-inline select { height: 32px; }
+.set-inline input[type="text"]:not(.tm) { width: 12em; }
+.set-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-left: calc(var(--k) + 16px); }
+.set-status { font-size: 13px; line-height: 20px; color: var(--ink-2); margin-left: 4px; }
+.set-pane > .set-status { display: block; margin: 6px 0 0 calc(var(--k) + 16px); }
+.set-keys { font-size: 13px; color: var(--ink-2); }
+.set-keys kbd { margin-right: 2px; }
+
+/* Google 試算表的步驟和程式；每日提醒的預覽 */
+.set-steps { list-style: decimal; padding-left: 1.3em; font-size: 13px; line-height: 22px; color: var(--ink-2); }
+.set-steps .link { margin-left: 6px; }
+.set-pre { margin: 10px 0 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); font: 12px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; }
+.set-code { white-space: pre; overflow-x: auto; max-height: 150px; }
+
+/* 我的條件：分組，兩欄 */
+.set-cond { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; align-items: start; }
+.set-cond h4 { font-size: 12px; line-height: 18px; font-weight: 400; color: var(--ink-3); margin-bottom: 2px; }
+.set-cond .check { display: flex; font-size: 13px; line-height: 24px; }
+
+/* 備份匯入：選好檔案後確認「會取代 N 間學校」 */
+.set-import { margin: 0 0 6px calc(var(--k) + 16px); padding: 8px 0 10px; border-bottom: 1px solid var(--line); }
+.set-import-f { font-size: 13px; line-height: 20px; color: var(--ink-2); overflow-wrap: anywhere; }
+.set-import-w { font-size: 15px; line-height: 24px; font-weight: 600; margin-top: 2px; }
+.set-import .set-acts { padding-left: 0; margin-top: 6px; }
+
+.set-foot { flex-wrap: wrap; }
+.set-foot .link { font-size: 13px; }
+
+@media (max-width: 600px) {
+  .set { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .set-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .set-nav button { height: 30px; padding: 0 10px; font-size: 13px; }
+  .set-pane { padding: 14px 16px 24px; }
+  .set-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .set-warn, .set-pane > .form-err, .set-pane > .set-status, .set-import { margin-left: 0; }
+  .set-acts { padding-left: 0; }
+  .set-cond { grid-template-columns: minmax(0, 1fr); }
+  .set-two { grid-template-columns: minmax(0, 1fr); }
+}
