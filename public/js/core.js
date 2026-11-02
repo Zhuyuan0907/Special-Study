@@ -100,14 +100,14 @@ export const clashNow = () => L.clashes(S.apps, P.byId, now(), lopts());
 // 花費的每一行（自動的報名費＋自己記的），新的在上面
 export const expensesNow = () => L.expenseLines(S.apps, S.expenses, P.byId, lopts());
 export const actx = app => ({now: now(), apps: S.apps, program: programOf(app), programs: P.byId, uid});
-// 按鈕的動作：act(app.id, 'tick', {key:'pay'}, {toast:'已記下：市北 繳費'})
+// 按鈕的動作：act(app.id, 'tick', {key:'pay'}, {toast:'已記下：北市大 繳費'})
 export const act = (appId, actionId, payload, opts) => mutate(appId, a => L.applyAction(a, actionId, payload, actx(a)), opts);
 // 幾間學校的簡稱，照學校清單的順序（同天、撞期在每個畫面都一樣）→ ['宜大', '高師大']
 export function namesOf(ids) {
   const o = orderNow(), rank = new Map([...o.active, ...o.ended].map((a, i) => [a.id, i]));
   return [...new Set(ids || [])].map(appById).filter(Boolean).sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).map(shortName);
 }
-// 回答、決定之後的提示（接下來、學校頁共用）：寫新的狀態字「已記下：市北 已報名」；狀態字不變的動作寫動作本身。
+// 回答、決定之後的提示（接下來、學校頁共用）：寫新的狀態字「已記下：北市大 已報名」；狀態字不變的動作寫動作本身。
 export function actionToast(app, id, payload = {}) {
   const name = shortName(app);
   if (id === 'skipInterview') return `已記下：${name} 不去`;

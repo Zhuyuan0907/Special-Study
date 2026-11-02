@@ -54,8 +54,8 @@ test('L2 自己改的剛好就是簡章的新值：不算衝突；真的衝突�
   assert.ok(!L.isEdited(d));
   assert.equal(d.brochureNow, undefined);
   assert.notEqual(r.app, mine, '基準更新了要寫回');
-  // 真的衝突：市北報到 自己改 17:00，簡章改到 12/12 16:00
-  const tp = S('市北'), cf = tp.dates.find(x => x.kind === 'confirm');
+  // 真的衝突：北市大報到 自己改 17:00，簡章改到 12/12 16:00
+  const tp = S('北市大'), cf = tp.dates.find(x => x.kind === 'confirm');
   const ed = L.applyAction(tp, 'editDate', {rowId: cf.id, time: '17:00'});
   const p2 = withProgram(tp.programId, p => { p.ev = p.ev.map(e => e[0] === 'confirm' ? ['confirm', '2026-12-12', '', '16:00', '', e[5], ''] : e); });
   const r2 = L.syncApp(ed, p2.get(tp.programId), '2026-11-02T13:00');
@@ -69,8 +69,8 @@ test('L2 自己改的剛好就是簡章的新值：不算衝突；真的衝突�
 
 /* ---------- L3 意願、准考證的鐘點 ---------- */
 test('L3 填遞補意願的列有鐘點：過了鐘點才算逾期，.ics 也有鐘點', {skip: SKIP}, () => {
-  const tp = set(S('市北'), {status: 'waitlist'});
-  const at = now => ids(L.agenda([tp], PROGS, now, OPTS).rows, '市北', [tp]).find(r => r.role === 'intent');
+  const tp = set(S('北市大'), {status: 'waitlist'});
+  const at = now => ids(L.agenda([tp], PROGS, now, OPTS).rows, '北市大', [tp]).find(r => r.role === 'intent');
   const r15 = at('2026-12-11T15:00');
   assert.deepEqual([r15.time, L.timeText(r15, '2026-12-11T15:00'), r15.overdue], ['16:00', '16:00', false]);
   assert.equal(at('2026-12-11T17:00').overdue, true);
@@ -106,7 +106,7 @@ test('L4 新增日期從名稱猜種類：面試、放榜、報到會上接下�
 
 /* ---------- L5 遞補公告沒回答就留著 ---------- */
 test('L5 遞補公告沒回答就留著（逾期），回答「還沒」才不見；同校下一次遞補公告到了只問最新的', {skip: SKIP}, () => {
-  const tp = set(S('市北'), {status: 'waitlist'});
+  const tp = set(S('北市大'), {status: 'waitlist'});
   const w = L.agenda([tp], PROGS, '2026-12-16T09:00', OPTS).rows.find(r => r.role === 'waitcheck');
   assert.ok(w, '12/15 的開始遞補 12/16 還在');
   assert.deepEqual([w.date, w.overdue, w.question], ['2026-12-15', true, 'promoted']);
@@ -139,7 +139,7 @@ test('L6 狀態選單選一般狀態會清掉「不去面試」', {skip: SKIP}, 
 
 /* ---------- L7 列名、附註變了 ---------- */
 test('L7 同步：只改附註會寫進去；列名改了當成同一列（改過的不重複、刪掉的不回來）', {skip: SKIP}, () => {
-  const tp = S('市北'), up = tp.dates.find(d => d.kind === 'upload'), id = tp.programId;
+  const tp = S('北市大'), up = tp.dates.find(d => d.kind === 'upload'), id = tp.programId;
   // (a) 只改附註
   const pa = withProgram(id, p => { p.ev = p.ev.map(e => e[0] === 'upload' ? [...e.slice(0, 6), '限時掛號，郵戳為憑'] : e); });
   const ra = L.syncApp(tp, pa.get(id), '2026-11-02T13:00');
@@ -156,7 +156,7 @@ test('L7 同步：只改附註會寫進去；列名改了當成同一列（改�
   const r2 = L.syncApp(ed, pb.get(id), '2026-11-02T13:00');
   const d2 = r2.app.dates.filter(d => d.kind === 'upload');
   assert.deepEqual(d2.map(d => [d.id, d.date, !!d.gone]), [[up.id, '2026-11-03', false]]);
-  assert.equal(ids(L.agenda([r2.app], pb, '2026-11-02T12:00', OPTS).rows, '市北', [r2.app]).filter(r => r.parts.some(p => p.key === 'docs')).length, 1);
+  assert.equal(ids(L.agenda([r2.app], pb, '2026-11-02T12:00', OPTS).rows, '北市大', [r2.app]).filter(r => r.parts.some(p => p.key === 'docs')).length, 1);
   // 自己改過名：留自己的列名，附註跟簡章
   const rn = L.applyAction(tp, 'editDate', {rowId: up.id, label: '寄備審'});
   const r3 = L.syncApp(rn, pa.get(id), '2026-11-02T13:00').app.dates.find(d => d.id === up.id);
@@ -170,10 +170,10 @@ test('L7 同步：只改附註會寫進去；列名改了當成同一列（改�
 });
 
 /* ---------- L8 列的時間跟著還沒勾的部分 ---------- */
-test('L8 勾完繳費的市北：列寫「今天郵戳」、不是已經過了的 15:30；政大勾了報名寫 15:00', {skip: SKIP}, () => {
-  const p = PROGS.get(S('市北').programId), now = '2026-11-02T16:00';
-  const a = L.applyAction(S('市北'), 'tick', {key: 'pay'}, {program: p});
-  const row = ids(L.agenda(replaceApp(apps0, a), PROGS, now, OPTS).rows, '市北')[0];
+test('L8 勾完繳費的北市大：列寫「今天郵戳」、不是已經過了的 15:30；政大勾了報名寫 15:00', {skip: SKIP}, () => {
+  const p = PROGS.get(S('北市大').programId), now = '2026-11-02T16:00';
+  const a = L.applyAction(S('北市大'), 'tick', {key: 'pay'}, {program: p});
+  const row = ids(L.agenda(replaceApp(apps0, a), PROGS, now, OPTS).rows, '北市大')[0];
   assert.deepEqual([L.timeText(row, now), row.time, row.overdue], ['今天郵戳', '', false]);
   assert.deepEqual(row.parts.map(x => `${x.name}:${x.own}`), ['報名:15:30', '繳費:15:30', '郵寄備審:']);
   assert.ok(row.sortKey.startsWith('2026-11-02T--:--'));
@@ -281,16 +281,16 @@ test('D-b 郵戳、寄達有鐘點：寫「12:00 前寄達」，過了鐘點就�
   const r = row('2026-11-20T15:00');
   assert.deepEqual([r.time, r.mail, L.timeText(r, '2026-11-20T15:00'), r.overdue], ['16:00', 'postmark', '今天 16:00 前郵戳', false]);
   assert.equal(row('2026-11-20T16:01').overdue, true);
-  // 市北郵寄（沒鐘點）：到當天結束都還算數
-  const tp = L.applyAction(S2('市北'), 'tick', {key: 'pay'}, {program: P2('市北')});
-  const t = ids(L.agenda([tp], PROGS2, '2026-11-02T23:00', OPTS).rows, '市北', [tp])[0];
+  // 北市大郵寄（沒鐘點）：到當天結束都還算數
+  const tp = L.applyAction(S2('北市大'), 'tick', {key: 'pay'}, {program: P2('北市大')});
+  const t = ids(L.agenda([tp], PROGS2, '2026-11-02T23:00', OPTS).rows, '北市大', [tp])[0];
   assert.deepEqual([L.timeText(t, '2026-11-02T23:00'), t.overdue], ['今天郵戳', false]);
 });
 
 /* ---------- D-c 要自己印的東西 ---------- */
 test('D-c 列印審核通知、應考證明、准考證、應試號碼都是「要做」；只看列名、不看附註', {skip: SKIP}, () => {
   const roleOf = (s, label) => L.eventsOf(S2(s), P2(s)).find(e => L.rowLabel(S2(s).dates.find(d => d.id === e.rowId)) === label);
-  assert.deepEqual(['role', 'label'].map(k => roleOf('興大', '列印甄試資格審核通知')[k]), ['ticket', '印審核通知']);
+  assert.deepEqual(['role', 'label'].map(k => roleOf('中興', '列印甄試資格審核通知')[k]), ['ticket', '印審核通知']);
   assert.deepEqual(['role', 'label'].map(k => roleOf('逢甲', '開放列印應考證明')[k]), ['ticket', '印應考證明']);
   assert.equal(roleOf('淡江', '應試號碼查詢及列印').role, 'ticket');
   assert.equal(roleOf('宜大', '公告口試注意事項、准考證號碼').role, 'notice', '宜大只查號碼');
@@ -298,8 +298,8 @@ test('D-c 列印審核通知、應考證明、准考證、應試號碼都是「�
   const yi = S2('宜大'), s1 = yi.dates.find(d => d.kind === 'stage1');
   const noted = set(yi, {dates: yi.dates.map(d => d.id === s1.id ? {...d, note: L.rowLabel(d) + '｜准考證請自行列印'} : d)});
   assert.equal(L.eventsOf(noted, P2('宜大')).find(e => e.rowId === s1.id).role, 'notice');
-  // 興大 11/17 開放列印，面試 12/04：到面試那天之前都不逾期
-  const xd = set(S2('興大'), {status: 'applied'});
+  // 中興 11/17 開放列印，面試 12/04：到面試那天之前都不逾期
+  const xd = set(S2('中興'), {status: 'applied'});
   for (const now of ['2026-11-18T09:00', '2026-12-03T22:00']) {
     const t = L.agenda([xd], PROGS2, now, OPTS).rows.find(r => r.role === 'ticket');
     assert.deepEqual([t.date, t.overdue, t.from, t.fromTime], ['2026-12-04', false, '2026-11-17', '10:00'], now);
@@ -320,7 +320,7 @@ test('D-d 新簡章遷移：舊列對到新列（成大 筆試→上機考試）
   assert.equal(cd.dates.filter(d => d.kind === 'exam').length, 1);
   const lt = cd.dates.find(d => d.id === cdo.dates.find(x => x.note === '推薦函截止').id);
   assert.deepEqual([lt.src, lt.gone, lt.date, lt.time], ['brochure', true, '2026-10-20', '23:59']);
-  const tp = S2('市北'), rv = tp.dates.find(d => /初試成績複查/.test(d.note));
+  const tp = S2('北市大'), rv = tp.dates.find(d => /初試成績複查/.test(d.note));
   assert.deepEqual([rv.src, rv.gone, rv.date], ['brochure', true, '2026-11-21']);
   // gone 的列：接下來（每個時間點）、行事曆都沒有；學校頁時程只在「全部日期」
   const goneIds = new Set(apps2.flatMap(a => a.dates.filter(d => d.gone).map(d => d.id)));
@@ -328,7 +328,7 @@ test('D-d 新簡章遷移：舊列對到新列（成大 筆試→上機考試）
   for (const now of ['2026-10-20T12:00', '2026-11-02T02:30', '2026-11-21T09:00']) {
     for (const r of L.agenda(apps2, PROGS2, now, OPTS).rows) assert.ok(!r.rowIds.some(id => goneIds.has(id)), now);
   }
-  const tl = L.timeline(tp, P2('市北'), '2026-11-02T13:00', {apps: apps2, programs: PROGS2}).find(r => r.rowId === rv.id);
+  const tl = L.timeline(tp, P2('北市大'), '2026-11-02T13:00', {apps: apps2, programs: PROGS2}).find(r => r.rowId === rv.id);
   assert.deepEqual([tl.gone, tl.milestone], [true, false]);
   // eventsOf 預設不給 gone 的列（畫面不會不小心畫出來），{gone:true} 才給
   assert.ok(!L.eventsOf(cd, P2('成大')).some(e => e.rowId === lt.id));
@@ -347,8 +347,8 @@ test('D-d 新簡章遷移：舊列對到新列（成大 筆試→上機考試）
   // 政大 遞補意願：截止 01/04 17:00，從 12/22 14:00 起
   const zw = S2('政大').dates.find(d => /意願/.test(d.note));
   assert.deepEqual([zw.date, zw.time, zw.from, zw.fromTime, L.isEdited(zw)], ['2027-01-04', '17:00', '2026-12-22', '14:00', false]);
-  // 市北的勾
-  assert.deepEqual(S2('市北').regSteps.map(s => [s.key, s.done]), [['reg', true], ['docs', false]]);
+  // 北市大的勾
+  assert.deepEqual(S2('北市大').regSteps.map(s => [s.key, s.done]), [['reg', true], ['docs', false]]);
   // 再同步一次：沒有改動；遷移跑兩次一樣
   const again = syncAll(apps2, PROGS2, '2026-11-03T09:00');
   assert.deepEqual(again.changes, []);

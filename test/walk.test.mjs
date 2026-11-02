@@ -15,7 +15,7 @@ const P = a => PROGS2.get(a.programId);
 
 /* ---------- W33-2 備取意願、印准考證的鐘點 ---------- */
 test('W33-2 填遞補意願保留 16:00：15:00 還沒逾期，16:01 逾期；印准考證開放後到考試日都勾得到', {skip: SKIP}, () => {
-  const tp = set(S('市北'), {status: 'waitlist', waitNo: 5});
+  const tp = set(S('北市大'), {status: 'waitlist', waitNo: 5});
   const r = at => L.agenda([tp], PROGS2, at, OPTS).rows.find(x => x.role === 'intent');
   assert.equal(r('2026-12-11T15:00').time, '16:00');
   assert.equal(r('2026-12-11T15:00').overdue, false);
@@ -32,8 +32,8 @@ test('W33-2 填遞補意願保留 16:00：15:00 還沒逾期，16:01 逾期；�
 });
 
 /* ---------- W33-4 時程的「下一個」不會是已經做完的列 ---------- */
-test('W33-4 興大勾完報名・繳費・繳件：11/09 兩列算做完，下一個是之後的里程碑；和下一步一樣不會是做完的', {skip: SKIP}, () => {
-  const now = '2026-11-02T10:00', xd = S('興大');
+test('W33-4 中興勾完報名・繳費・繳件：11/09 兩列算做完，下一個是之後的里程碑；和下一步一樣不會是做完的', {skip: SKIP}, () => {
+  const now = '2026-11-02T10:00', xd = S('中興');
   const before = L.timeline(xd, P(xd), now, {apps: [xd], programs: PROGS2});
   assert.equal(before.find(r => r.next).role, 'reg', '還沒勾：下一個是報名');
   let b = xd;

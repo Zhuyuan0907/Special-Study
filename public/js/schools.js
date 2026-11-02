@@ -350,7 +350,7 @@ function submitLines(app, p, said = new Set()) {
   if (ev) {
     const pt = ev.parts.find(x => x.key === 'docs');
     const how = pt.mail === 'postmark' ? '郵寄，郵戳為憑' : pt.mail === 'arrive' ? '寄達為憑' : /上傳/.test(pt.name) ? '網路上傳' : ev.kind === 'reg' ? '和網路報名一起繳交' : '';
-    // 附註已經寫了郵戳／寄達的規則（市北「限時掛號，郵戳為憑」），推出來的「郵寄，郵戳為憑」就不重複
+    // 附註已經寫了郵戳／寄達的規則（北市大「限時掛號，郵戳為憑」），推出來的「郵寄，郵戳為憑」就不重複
     const t = [pt.mail && /郵戳|寄達|送達/.test(ev.note) ? '' : how, said.has(ev.rowId) ? '' : ev.note].filter(Boolean).join('；');
     if (t) out.push(t);
   }

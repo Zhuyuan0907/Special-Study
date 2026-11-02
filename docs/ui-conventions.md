@@ -93,7 +93,7 @@ href('schools', app.id)                  // '#schools/<id>'
 <!-- .task：打勾後字變灰。勾選框和第一行文字會自動垂直置中（用 1lh） -->
 
 <!-- 學校名、日期 -->
-<a class="sch" href="#schools/<id>" style="--hue:var(--c6)">市北</a>
+<a class="sch" href="#schools/<id>" style="--hue:var(--c6)">北市大</a>
 <span class="when hot">今天</span> <span class="when">11/09（一）</span> <span class="unk">時間未公布</span>
 <p class="ref">限時掛號，郵戳為憑　<a class="pg" …>p.25</a></p>   <!-- 簡章：13px 灰 -->
 <span class="edited">已改</span>
@@ -158,7 +158,7 @@ mutateMany([[A.id, a => L.applyAction(a, 'gaveUp', {}, actx(a))], [B.id, b => L.
 const app = L.newApp(program, {apps: S.apps, nowMs: Date.now()});
 addApp(app, {toast: `已加入 ${shortName(app)} ${deptName(app)}`, action: {label: '打開', fn: () => go({view: 'schools', id: app.id})}});
 
-// 刪除：先從畫面拿掉，提示「已刪除 市北　復原」，8 秒後、而且提示收起來後才真的送出 DELETE（滑鼠停在提示上就一直可以復原）
+// 刪除：先從畫面拿掉，提示「已刪除 北市大　復原」，8 秒後、而且提示收起來後才真的送出 DELETE（滑鼠停在提示上就一直可以復原）
 removeApp(app.id);
 
 // 花費：一筆一筆存，和學校同一套（佇列、409 重做、重試、刪除 8 秒內可以復原）
@@ -180,7 +180,7 @@ S.todos.push(t); saveTodos();
 6. 遇到其他 4xx（例如 410：這間學校已經在別的分頁或裝置刪掉了）：不再重試，重新載入，提示列留著「沒有存到：…」。
 7. 復原只會把這次改到的欄位改回去，同時間別的欄位不受影響。
 
-提示的文字：「已記下：市北 已報名」「已刪除 市北」「已加入 中教大 資工」。復原、打開由 core 加上。錯誤不要用提示，寫在那一項旁邊（`.form-err`）。
+提示的文字：「已記下：北市大 已報名」「已刪除 北市大」「已加入 中教大 資工」。復原、打開由 core 加上。錯誤不要用提示，寫在那一項旁邊（`.form-err`）。
 
 ## 「改」表單
 
@@ -236,7 +236,7 @@ openDialog($('#dlg-add'));   // 一定要用這個打開，提示才看得到（
 
 ## 其他
 
-- 分頁標題：「特選」，接下來的第一列是今天時加上「· 今天 市北 15:30」（app.js 算）。
+- 分頁標題：「特選」，接下來的第一列是今天時加上「· 今天 北市大 15:30」（app.js 算）。
 - 列印：把內容放進 `#print`，再呼叫 `window.print()`。列印時只會印 `#print`，裡面可以用 table、h1、h2、ul 和 `.pmeta`。
 - `copyText(text)`、`download(name, text, type)`、`setTheme('dark'|'light'|'')`、`theme()`、`ls.get/set`（localStorage，無痕模式也不會出錯）、`CONDITIONS`／`COND_BY_ID`（我的條件）都在 core。
 

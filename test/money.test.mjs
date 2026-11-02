@@ -42,20 +42,20 @@ test('checkExpense：只留認得的欄位；不對的回 error', () => {
   assert.ok(L.checkExpense({id: 'x', date: '2026-11-06', amount: 1, what: '字'.repeat(60)}).entry, '60 個字可以');
 });
 
-test('自動的報名費：真實紀錄遷移後是 輔大 900、成大 800；市北勾了繳費才有 600', {skip: SKIP}, () => {
+test('自動的報名費：真實紀錄遷移後是 輔大 900、成大 800；北市大勾了繳費才有 600', {skip: SKIP}, () => {
   const ls = lines(apps0);
   assert.deepEqual(ls.map(l => [l.school, l.amount, l.what, l.cat, l.derived]), [['輔大', 900, '報名費', 'reg', true], ['成大', 800, '報名費', 'reg', true]]);
   assert.ok(ls.every(l => L.isKey(l.date) && l.id === 'fee:' + l.appId));
   assert.deepEqual(L.expenseTotals(ls).total, 1700);
-  // 市北：報名勾了（準備中），繳費沒勾 → 沒有；勾了繳費 → 600，日期是繳費那一列的截止日
-  const tp = S('市北'), p = PROGS2.get(tp.programId);
+  // 北市大：報名勾了（準備中），繳費沒勾 → 沒有；勾了繳費 → 600，日期是繳費那一列的截止日
+  const tp = S('北市大'), p = PROGS2.get(tp.programId);
   assert.equal(tp.status, 'prep');
   assert.ok(tp.regSteps.some(s => s.key === 'reg' && s.done));
   const paid = L.applyAction(tp, 'tick', {key: 'pay', done: true}, {program: p});
   assert.equal(paid.status, 'prep', '還有郵寄沒勾');
   const l2 = lines(replaceApp(apps0, paid));
   const fee = l2.find(l => l.appId === tp.id);
-  assert.deepEqual([fee.amount, fee.date, fee.school], [600, '2026-11-02', '市北']);
+  assert.deepEqual([fee.amount, fee.date, fee.school], [600, '2026-11-02', '北市大']);
   assert.equal(L.expenseTotals(l2).total, 2300);
 });
 
@@ -97,14 +97,14 @@ test('每一行：新的在上面（日期，再來記下的時間）；學校�
 
 test('合計：依類別六類都有、依學校多的在前、沒有指定學校放最後', () => {
   const ls = [
-    {id: '1', amount: 600, cat: 'reg', appId: 'tp', school: '市北'}, {id: '2', amount: 120, cat: 'mail', appId: 'tp', school: '市北'},
+    {id: '1', amount: 600, cat: 'reg', appId: 'tp', school: '北市大'}, {id: '2', amount: 120, cat: 'mail', appId: 'tp', school: '北市大'},
     {id: '3', amount: 1490, cat: 'travel', appId: '', school: ''}, {id: '4', amount: 900, cat: 'reg', appId: 'fj', school: '輔大'},
     {id: '5', amount: 50, cat: 'print', appId: 'gone', school: '淡江'}, {id: '6', amount: 30, cat: 'weird', appId: '', school: ''},
   ];
   const t = L.expenseTotals(ls);
   assert.equal(t.total, 3190);
   assert.deepEqual(t.byCat, {reg: 1500, travel: 1490, stay: 0, mail: 120, print: 50, other: 30});
-  assert.deepEqual(t.bySchool.map(s => [s.school, s.amount]), [['輔大', 900], ['市北', 720], ['淡江', 50], ['', 1520]]);
+  assert.deepEqual(t.bySchool.map(s => [s.school, s.amount]), [['輔大', 900], ['北市大', 720], ['淡江', 50], ['', 1520]]);
   assert.deepEqual(L.expenseTotals([]), {total: 0, byCat: {reg: 0, travel: 0, stay: 0, mail: 0, print: 0, other: 0}, bySchool: []});
 });
 
@@ -113,13 +113,13 @@ test('猜學校：前後一天內的面試／考試、郵寄，最近的；繳�
   assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-14'), id('成大'), '上機考試當天');
   assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-13'), id('成大'), '前一天');
   assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-15'), id('成大'), '後一天');
-  assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-02'), id('市北'), '市北 郵寄');
+  assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-02'), id('北市大'), '北市大 郵寄');
   // 只有繳費截止的日子不猜（政大 11/10、宜大 11/11、淡江 11/16、逢甲 11/19）：那天記的午餐、影印多半跟那間無關
   for (const d of ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20']) assert.equal(L.guessSchool(apps0, PROGS2, d), '', d + ' 只有繳費');
   assert.equal(L.guessSchool(apps0, PROGS2, '2026-11-06'), id('輔大'), '輔大 面試');
-  assert.equal(L.guessSchool(apps0, PROGS2, '2026-12-04'), '', '逢甲、興大、高師大同一天面試');
+  assert.equal(L.guessSchool(apps0, PROGS2, '2026-12-04'), '', '逢甲、中興、高師大同一天面試');
   assert.equal(L.guessSchool(apps0, PROGS2, '2027-06-01'), '');
   assert.equal(L.guessSchool(apps0, PROGS2, ''), '');
   assert.equal(L.guessSchool(replaceApp(apps0, set(S('成大'), {ivSkip: true})), PROGS2, '2026-11-14'), '', '不去的考試不算');
-  assert.equal(L.guessSchool(replaceApp(apps0, set(S('市北'), {status: 'skipped'})), PROGS2, '2026-11-02'), '', '沒有報名的不算');
+  assert.equal(L.guessSchool(replaceApp(apps0, set(S('北市大'), {status: 'skipped'})), PROGS2, '2026-11-02'), '', '沒有報名的不算');
 });

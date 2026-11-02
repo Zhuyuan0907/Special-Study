@@ -222,7 +222,7 @@ function select(key, {reveal = false} = {}) {
 }
 
 /* ---------- 動作 ---------- */
-// 提示（core.actionToast）：狀態有變就寫新的狀態字（「已記下：市北 已報名」），附復原
+// 提示（core.actionToast）：狀態有變就寫新的狀態字（「已記下：北市大 已報名」），附復原
 function run(r, a, payload) {
   const app = appById(r.appId);
   if (!app) return;

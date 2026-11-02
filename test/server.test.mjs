@@ -134,7 +134,7 @@ test('/data 只給簡章資料；紀錄和備份一律 403；.ics、meta、總�
     assert.equal(ics.status, 200);
     assert.match(ics.type, /text\/calendar/);
     assert.match(ics.body, /BEGIN:VEVENT/);
-    assert.match(ics.body, /SUMMARY:市北 /);
+    assert.match(ics.body, /SUMMARY:北市大 /);
     const meta = (await json(s, '/api/meta')).data;
     assert.ok(Array.isArray(meta.lan));
     assert.equal(meta.recovered, null);
@@ -193,7 +193,7 @@ test('簡章資料變了才同步：先備份、記 syncLog；改過的日期留
     assert.equal((await json(s, '/api/apps/tp', {method: 'PUT', headers: W, body: JSON.stringify(edited)})).status, 200);
     assert.ok(rel);
   } finally { await stop(s); }
-  // 市北放榜改到 12/05、報到改 15:00（自己改過 10:00，要留著）
+  // 北市大放榜改到 12/05、報到改 15:00（自己改過 10:00，要留著）
   const P2 = structuredClone(PD);
   const p = P2.programs.find(x => x.i === '116-032-005');
   p.ev = p.ev.map(e => e[0] === 'release' ? ['release', '2026-12-05', '', '', '', e[5], ''] : e[0] === 'confirm' ? ['confirm', '2026-12-11', '', '15:00', '', e[5], ''] : e);
@@ -577,7 +577,7 @@ test('匯入等備份的時候，別的分頁存好（回 200／204）的花費�
 
 test('花費：啟動時的遷移不碰它；沒有 expenses 的 v3 檔載入是 []、不會寫檔', async t => {
   // v2 檔裡已經有花費（例如手動加的，還有不認得的欄位）：遷移照樣跑，花費原樣留著
-  const withExp = {...structuredClone(V2), expenses: [{id: 'k1', date: '2026-11-01', amount: 30, what: '影印', cat: 'print', appId: 'tp', school: '市北', rev: 1, createdAt: 1, note: '自己加的欄位'}]};
+  const withExp = {...structuredClone(V2), expenses: [{id: 'k1', date: '2026-11-01', amount: 30, what: '影印', cat: 'print', appId: 'tp', school: '北市大', rev: 1, createdAt: 1, note: '自己加的欄位'}]};
   const dir = makeDir(withExp);
   t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
   let s = await start(dir);

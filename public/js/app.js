@@ -33,7 +33,7 @@ function render() {
 onRoute(show);
 onChange(render);
 
-/* ---------- 分頁標題：特選 · 今天 市北 15:30 ---------- */
+/* ---------- 分頁標題：特選 · 今天 北市大 15:30 ---------- */
 let sig = '';
 function title() {
   let t = '特選';

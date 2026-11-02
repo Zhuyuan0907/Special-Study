@@ -23,7 +23,7 @@
 - `dayLabel(date, now)`: 今天 · 明天 · 後天 · 週五 11/06 (3–6 days ahead) · 11/24（二） (otherwise, past days included).
 - `timeText(rowOrPart, now)`: 「15:30」. For an untimed postmark row it gives 「今天郵戳」 or 「郵戳 11/16」 (open until the day ends). A postmark row with a time gives 「03/03 12:00 前郵戳」 (「今天 12:00 前郵戳」 today), and that time is the deadline. For arrival rows it gives 「11/16 前寄達」 or 「03/03 12:00 前寄達」. When there is no time it returns 「」. Only the school-page timeline writes 時間未公布.
 - `fmtDate(d)` 「11/09（一）」, `md(d)` 「11/09」, `weekday(d)` 「一」, `addDays(d, n)`, `daysBetween(a, b)`, `clock(now)` → `{date, time}`.
-- `shortSchool(name, aliases)`: 市北, 成大, 興大, 淡江… `shortDept(dept)`: 資工, 資工・資安組, 醫資・資安外加, 軟工・資安外加, 資工全英語 (全英語／英語／國際 is kept). `splitDept(dept)` → `{main, quals}`.
+- `shortSchool(name, aliases)`: the first alias listed for that school in search-terms.json (北市大, 成大, 中興, 陽明交大, 淡江…); later aliases are search-only. `shortDept(dept)`: 資工, 資工・資安組, 醫資・資安外加, 軟工・資安外加, 資工全英語 (全英語／英語／國際 is kept). `splitDept(dept)` → `{main, quals}`.
 - `appName(app, apps, aliases)`: the name to print for an app: the short school name, plus the short dept only when another app in `apps` has the same school (「宜大 資工・資安組」 / 「宜大 資工」). Row labels (swap, giveup) use it. The client's `shortName(app)` is this; `schoolName(app)` is the bare short name for places that already print the dept next to it.
 - `shortDoc(full)`: a 備審 name at most 12 characters wide. It cuts at the first bracket, colon or comma (small-form ﹙﹐﹕ and ︰ count too); when it still has to cut, it backs off to the last whole word ending (資料, 證明, 影本…, at most 4 back), so it never stops mid-word (「其他有助於書面審查資料」, not 「…資料影」). Docs already store `name` (short) and `full` (brochure text).
 - `rowLabel(dateRow)` / `rowNote(dateRow)`: a date row's `note` is stored as `標籤｜簡章附註`. Use these instead of reading `note`.
@@ -37,7 +37,7 @@ App: all v2 fields, plus `v:3`, `rev` (the server bumps it on every write), `hid
 Date row: `{id, kind, date, time, end, from, fromTime, note, src:'brochure'|'mine', ref, bro, upd?, gone?, brochureNow?, mail?}`.
 - `date`/`time` is the deadline or the event moment. `from`/`fromTime` is when a deadline range opens. `end` is used only for multi-day events.
 - `bro` holds the brochure values the row was last synced from. `upd` is the id of the sync that changed the row, so the school page shows 「簡章更新」 until that school is opened (compare against the last `syncLog` id the client has seen).
-- `gone`: the brochure no longer has this row. Two ways: a row you edited whose brochure row has since disappeared (sync), or a v2 row whose brochure row was removed before the migration (migration keeps it losslessly, e.g. 成大 推薦函截止, 市北 初試成績複查). Gone rows are never on 接下來, 行事曆, .ics or the digest, never decide the stage, clashes or required parts, and are not timeline milestones (the school page shows them only under 全部日期, marked 簡章已刪除). Sync keeps them and clears `gone` if the brochure brings the row back.
+- `gone`: the brochure no longer has this row. Two ways: a row you edited whose brochure row has since disappeared (sync), or a v2 row whose brochure row was removed before the migration (migration keeps it losslessly, e.g. 成大 推薦函截止, 北市大 初試成績複查). Gone rows are never on 接下來, 行事曆, .ics or the digest, never decide the stage, clashes or required parts, and are not timeline milestones (the school page shows them only under 全部日期, marked 簡章已刪除). Sync keeps them and clears `gone` if the brochure brings the row back.
 - `brochureNow`: a conflict; the brochure changed after you edited the row. On a conflict sync also moves `bro` to the new brochure value, so 還原 goes to what the brochure says now, and the same programs.json never reports the conflict twice. 還原 sets `brochureNow: null` (not deleted, so the server's carry-over doesn't put the old one back). When the brochure changes to exactly your edited value, sync adopts it silently (no conflict).
 
 Doc: `{id, name, full, done, src:'brochure'|'mine'|'placeholder', ref, opt?, gone?}`. `opt` means 選繳 (shown as a grey suffix, no tick). `gone` means a ticked item the brochure no longer lists.
@@ -56,7 +56,7 @@ regSteps: `{id, key, name, done}`. A tick is stored per `key` per app (`reg`, `p
 | `role` | `type` | rows |
 |---|---|---|
 | `reg` | do | reg/pay/upload/letter, expanded into parts |
-| `ticket` | do | things to print: a label (never the note) with 准考證／應考證／應試號碼 plus 列印／下載／印, or 列印…通知 (興大 列印甄試資格審核通知), on any non-screening row, `other` rows included. Label 印准考證, 印應考證明, 印審核通知 |
+| `ticket` | do | things to print: a label (never the note) with 准考證／應考證／應試號碼 plus 列印／下載／印, or 列印…通知 (中興 列印甄試資格審核通知), on any non-screening row, `other` rows included. Label 印准考證, 印應考證明, 印審核通知 |
 | `intent` | do | 備取 意願 rows (意願, 登記, 填寫, 備取生報到) |
 | `confirm` | do | 報到 |
 | `giveup` | do | the held-seat decision |
@@ -88,7 +88,7 @@ Row = {key, appId, date, time, sortKey, type, role, kind, label, parts:[Part], r
        clash?:[appId], tentative?, sameDay?:[{date, with:[appId]}], sendBy?, edited, upd}
 ```
 
-- `rows` is already sorted (date, then time with untimed first, then school order, then type) and merged: one row per school, per day and per role. Registration parts come in process order. Ticked parts stay visible until every required part of the row is ticked; then the row disappears. The row's `time` (and sort key) comes from its unticked parts: once 繳費 is ticked, 市北's row reads 「今天郵戳」, not the passed 15:30. When only mailed parts are left, `mail` is set and a timed postmark/arrival part gives the row its time.
+- `rows` is already sorted (date, then time with untimed first, then school order, then type) and merged: one row per school, per day and per role. Registration parts come in process order. Ticked parts stay visible until every required part of the row is ticked; then the row disappears. The row's `time` (and sort key) comes from its unticked parts: once 繳費 is ticked, 北市大's row reads 「今天郵戳」, not the passed 15:30. When only mailed parts are left, `mail` is set and a timed postmark/arrival part gives the row its time.
 - At 已報名, a registration row keeps only parts that are ticked or still ahead (印准考證 and 意願 rows are not filtered this way).
 - 印准考證 rows are ranges: `from`/`fromTime` = when printing opens, `date` = the last interview/exam day, `time` empty. They are not overdue until that day passes. (`key` keeps the brochure date.)
 - 遞補公告 rows (`waitcheck`) stay until answered, as overdue rows with [遞補上了][還沒]; when a later 遞補公告 of the same school has been reached, only that one asks.
@@ -96,7 +96,7 @@ Row = {key, appId, date, time, sortKey, type, role, kind, label, parts:[Part], r
 - `key` is stable for selection: `appId|date|role` (the event's own date).
 - `overdue`: the deadline or day has passed and the row is still unresolved. A timed deadline (including 12:00 前郵戳／前寄達) passes at that time; an untimed one at the end of the day.
 - `note`: brochure note(s), e.g. 「限時掛號，郵戳為憑」 or the method from `p.how`.
-- `sameDay` (registration rows only): this school's interview days that fall on the same day as other active schools, prep included. It is the detail-panel fact 「12/04 面試和 逢甲、興大、高師大 同一天」.
+- `sameDay` (registration rows only): this school's interview days that fall on the same day as other active schools, prep included. It is the detail-panel fact 「12/04 面試和 逢甲、中興、高師大 同一天」.
 - `sendBy` (arrival-deadline rows, also on parts with `mail:'arrive'`): the date minus 3 days, for 「最晚 11/13 寄出」.
 - `context`: one fact for the detail panel. Examples: 「通過的話 12/04 面試」 (stage1), 「其他 6 間還沒放榜」 (confirm), 「學測成績 02/25（暫定）」 (giveup), 「11/07 名單公布後才確定」 (a tentative go row: the app is 已報名 and the interview/exam still depends on a screening 名單).
 - `clash`: the other apps whose go row falls on the same day (applied or 待面試 only). Build the day header 「同天：…」 from the rows of that day, or use `clashes`.

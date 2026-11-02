@@ -41,11 +41,15 @@ test('clock：臺灣時間，不看主機時區', () => {
 });
 test('shortSchool / shortDept / shortDoc', () => {
   const a = OPTS.aliases;
-  assert.equal(L.shortSchool('臺北市立大學', a), '市北');
+  assert.equal(L.shortSchool('臺北市立大學', a), '北市大');
   assert.equal(L.shortSchool('國立成功大學', a), '成大');
-  assert.equal(L.shortSchool('國立中興大學', a), '興大');
+  assert.equal(L.shortSchool('國立中興大學', a), '中興');
   assert.equal(L.shortSchool('國立臺中教育大學', a), '中教大');
   assert.equal(L.shortSchool('淡江大學', a), '淡江');
+  assert.equal(L.shortSchool('國立陽明交通大學', a), '陽明交大');
+  assert.equal(L.shortSchool('國立臺灣師範大學', a), '師大');
+  assert.equal(L.shortSchool('國立臺北大學', a), '北大');
+  assert.equal(L.shortSchool('馬偕醫學大學', a), '馬偕醫學');
   assert.equal(L.shortDept('資訊工程學系'), '資工');
   assert.equal(L.shortDept('資安組 資訊工程學系'), '資工・資安組');
   assert.equal(L.shortDept('資訊工程學系 資安組'), '資工・資安組');
@@ -129,8 +133,8 @@ test('9 間學校的狀態、勾、筆記、日期都在', {skip: SKIP}, () => {
     }
   }
   const colors = Object.fromEntries(apps0.map(a => [L.shortSchool(a.school, OPTS.aliases), a.color]));
-  assert.deepEqual(colors, {輔大: 0, 成大: 1, 淡江: 2, 宜大: 3, 逢甲: 4, 興大: 5, 市北: 6, 政大: 7, 高師大: 8});
-  const tp = S('市北');
+  assert.deepEqual(colors, {輔大: 0, 成大: 1, 淡江: 2, 宜大: 3, 逢甲: 4, 中興: 5, 北市大: 6, 政大: 7, 高師大: 8});
+  const tp = S('北市大');
   assert.deepEqual(tp.regSteps.map(s => [s.key, s.name, s.done]), [['reg', '網路報名完成', true], ['docs', '備審上傳完成，並按「確認送出」', false]]);
   assert.equal(L.userNotes(tp), '', '自動的「甄選：…」不算筆記');
   assert.equal(tp.notes, '甄選：書面審查 100%', '但資料還在');
@@ -203,10 +207,10 @@ test('同步：少掉四成以上的列就跳過；NFKC 一樣的字不算改動
   assert.ok(r.skipped);
   assert.equal(r.app, S('成大'));
   const p2 = withProgram('116-006-052', p => { p.docs = p.docs.map(d => d.replace(/力/g, '力')); p.ev = p.ev.map(e => [...e.slice(0, 5), e[5].replace(/時間/g, '時間'), e[6]]); });
-  assert.deepEqual(L.syncApp(S('興大'), p2.get('116-006-052'), '2026-11-02T03:00').changes, []);
+  assert.deepEqual(L.syncApp(S('中興'), p2.get('116-006-052'), '2026-11-02T03:00').changes, []);
 });
 test('同步：備審換新清單時，勾過的跟著走；簡章拿掉的勾過項目留著標 gone', {skip: SKIP}, () => {
-  let a = S('市北');
+  let a = S('北市大');
   a = L.applyAction(a, 'tickDoc', {docId: a.docs[0].id, done: true});
   const progs = withProgram('116-032-005', p => { p.docs = ['修課紀錄（15%）：高中成績', '課程學習成果（10%）', '資安能力（40%）', '多元學習能力（35%）', '報名表（從報名系統列印）']; });
   const r = L.syncApp(a, progs.get('116-032-005'), '2026-11-02T03:00');
@@ -243,12 +247,12 @@ test('舊分頁把欄位洗掉的學校：重新遷移，不會重複', {skip: S
 });
 
 /* ---------- 接下來 ---------- */
-test('11/02 02:30：第一列是今天的市北（報名✓ 繳費 郵寄備審），接著輔大 11/04', {skip: SKIP}, () => {
+test('11/02 02:30：第一列是今天的北市大（報名✓ 繳費 郵寄備審），接著輔大 11/04', {skip: SKIP}, () => {
   const now = '2026-11-02T02:30';
   const ag = L.agenda(apps0, progsFju, now, OPTS);
   assert.equal(ag.focalIndex, 0);
   const r0 = ag.rows[0];
-  assert.equal(r0.appId, S('市北').id);
+  assert.equal(r0.appId, S('北市大').id);
   assert.equal(r0.date, '2026-11-02');
   assert.equal(L.timeText(r0, now), '15:30');
   assert.deepEqual(r0.parts.map(p => [p.name, p.done, p.own]), [['報名', true, ''], ['繳費', false, ''], ['郵寄備審', false, '今天郵戳']]);
@@ -260,11 +264,11 @@ test('11/02 02:30：第一列是今天的市北（報名✓ 繳費 郵寄備審�
   assert.equal(r1.label, '公布面試順序・地點');
   assert.equal(r1.question, undefined, 'scr:false 不問在不在名單上');
   assert.deepEqual(ag.rows.map(r => line(r, now)), [
-    '2026-11-02 15:30 市北 報名・繳費・郵寄備審',
+    '2026-11-02 15:30 北市大 報名・繳費・郵寄備審',
     '2026-11-04 - 輔大 公布面試順序・地點',
     '2026-11-06 - 輔大 面試',
     '2026-11-07 - 成大 公布筆試名單',
-    '2026-11-09 17:00 興大 報名・繳費・繳件',
+    '2026-11-09 17:00 中興 報名・繳費・繳件',
     '2026-11-09 23:59 高師大 報名・繳費',
     '2026-11-10 12:00 政大 報名・繳費・繳件',
     '2026-11-10 23:59 高師大 上傳備審',
@@ -285,7 +289,7 @@ test('11/02 02:30：第一列是今天的市北（報名✓ 繳費 郵寄備審�
 test('合併：部分的時間只在和這列不同時顯示；沒時間的寫時間未公布', {skip: SKIP}, () => {
   const now = '2026-11-02T02:30';
   const rows = L.agenda(apps0, PROGS, now, OPTS).rows;
-  const xd = ids(rows, '興大')[0];
+  const xd = ids(rows, '中興')[0];
   assert.deepEqual(xd.parts.map(p => `${p.name}:${p.own}`), ['報名:', '繳費:時間未公布', '繳件:']);
   const zz = ids(rows, '政大')[0];
   assert.equal(zz.time, '12:00');
@@ -295,11 +299,11 @@ test('合併：部分的時間只在和這列不同時顯示；沒時間的寫�
 });
 test('排序：沒時間的排在當天最前面；同時間依學校順序；逾期的留在原日期、在最上面', {skip: SKIP}, () => {
   const now = '2026-11-25T09:00';
-  let apps = apps0.map(a => ['宜大', '興大', '逢甲', '高師大'].includes(L.shortSchool(a.school, OPTS.aliases)) ? set(a, {status: 'interview'}) : a);
-  apps = replaceApp(apps, set(bySchool(apps, '興大'), {ivTime: '09:00'}));
+  let apps = apps0.map(a => ['宜大', '中興', '逢甲', '高師大'].includes(L.shortSchool(a.school, OPTS.aliases)) ? set(a, {status: 'interview'}) : a);
+  apps = replaceApp(apps, set(bySchool(apps, '中興'), {ivTime: '09:00'}));
   const rows = L.agenda(apps, PROGS, now, OPTS).rows.filter(r => r.date === '2026-12-04');
-  assert.deepEqual(rows.map(r => `${L.shortSchool(apps.find(a => a.id === r.appId).school, OPTS.aliases)} ${r.time}`), ['高師大 ', '宜大 ', '逢甲 ', '興大 09:00']);
-  // 市北 11/02 沒報完：11/03 時那一列還在、日期是 11/02、在最上面，問「有報名嗎」
+  assert.deepEqual(rows.map(r => `${L.shortSchool(apps.find(a => a.id === r.appId).school, OPTS.aliases)} ${r.time}`), ['高師大 ', '宜大 ', '逢甲 ', '中興 09:00']);
+  // 北市大 11/02 沒報完：11/03 時那一列還在、日期是 11/02、在最上面，問「有報名嗎」
   const ag = L.agenda(apps0, PROGS, '2026-11-03T10:00', OPTS);
   assert.equal(ag.rows[0].date, '2026-11-02');
   assert.equal(ag.rows[0].overdue, true);
@@ -311,9 +315,9 @@ test('排序：沒時間的排在當天最前面；同時間依學校順序；�
   assert.equal(r16.overdue, true);
   assert.equal(L.agenda(apps0, PROGS, '2026-11-02T15:30', OPTS).rows[0].overdue, false);
 });
-test('勾完市北的繳費和郵寄：那一列消失、狀態變已報名', {skip: SKIP}, () => {
-  const now = '2026-11-02T12:00', p = PROGS.get(S('市北').programId);
-  let a = L.applyAction(S('市北'), 'tick', {key: 'pay'}, {program: p, uid: uidSeq()});
+test('勾完北市大的繳費和郵寄：那一列消失、狀態變已報名', {skip: SKIP}, () => {
+  const now = '2026-11-02T12:00', p = PROGS.get(S('北市大').programId);
+  let a = L.applyAction(S('北市大'), 'tick', {key: 'pay'}, {program: p, uid: uidSeq()});
   assert.equal(a.status, 'prep');
   assert.equal(L.agenda(replaceApp(apps0, a), PROGS, now, OPTS).rows[0].parts.find(x => x.key === 'pay').done, true);
   a = L.applyAction(a, 'tick', {key: 'docs'}, {program: p});
@@ -323,7 +327,7 @@ test('勾完市北的繳費和郵寄：那一列消失、狀態變已報名', {s
   assert.ok(!rows.some(r => r.appId === a.id && r.date === '2026-11-02'));
   assert.equal(L.statusWord(a, p, now), '已報名');
   // 有報名：一次勾完
-  const b = L.applyAction(S('興大'), 'registered', {}, {program: PROGS.get(S('興大').programId)});
+  const b = L.applyAction(S('中興'), 'registered', {}, {program: PROGS.get(S('中興').programId)});
   assert.deepEqual(b.regSteps.map(s => s.key + s.done).sort(), ['docstrue', 'paytrue', 'regtrue']);
   assert.equal(b.status, 'applied');
 });
@@ -367,7 +371,7 @@ test('不篩選的名單：到那天自動變待面試，面試過了變等放�
   assert.ok(!L.agenda([skip], progsFju, '2026-11-05T00:00', OPTS).rows.some(r => r.type === 'go' || r.role === 'release'));
 });
 test('撞期：已報名／待面試的學校同一天面試', {skip: SKIP}, () => {
-  const four = ['宜大', '興大', '逢甲', '高師大'];
+  const four = ['宜大', '中興', '逢甲', '高師大'];
   const apps = apps0.map(a => four.includes(L.shortSchool(a.school, OPTS.aliases)) ? set(a, {status: 'applied'}) : a);
   const cl = L.clashes(apps, PROGS, '2026-11-25T09:00');
   assert.deepEqual([...cl.keys()], ['2026-12-04']);
@@ -378,7 +382,7 @@ test('撞期：已報名／待面試的學校同一天面試', {skip: SKIP}, () 
   assert.equal(L.clashes(skipped, PROGS, '2026-11-25T09:00').get('2026-12-04').length, 3);
   // 準備中的學校：不算撞期，只是學校頁上的事實
   assert.equal(L.clashes(apps0, PROGS, '2026-11-02T02:30').size, 0);
-  const sd = L.sameDay(S('興大'), apps0, PROGS, '2026-11-02T02:30');
+  const sd = L.sameDay(S('中興'), apps0, PROGS, '2026-11-02T02:30');
   assert.deepEqual(sd.map(x => [x.date, x.with.length]), [['2026-12-04', 3]]);
 });
 test('已經在 A 報到，B 正取：先辦 A 的放棄再換', {skip: SKIP}, () => {
@@ -427,7 +431,7 @@ test('沒事時的「下一個日期」：只挑那天真的會出現的事（�
   assert.equal(ag.upcoming.label, '放棄期限');
 });
 test('備取：意願要勾、遞補公告可以回答遞補上了', {skip: SKIP}, () => {
-  const tp = set(S('市北'), {status: 'waitlist', waitNo: 5});
+  const tp = set(S('北市大'), {status: 'waitlist', waitNo: 5});
   const p = PROGS.get(tp.programId);
   assert.equal(L.statusWord(tp, p, '2026-12-08T10:00'), '備取 5');
   const rows = L.agenda([tp], PROGS, '2026-12-08T10:00', OPTS).rows;
@@ -463,7 +467,7 @@ test('時程的改：改日期、還原、新增、刪除（刪除的簡章列�
   assert.deepEqual(h.hidden, [a.docs[0].ref]);
   assert.equal(L.syncApp(h, withProgram(a.programId, q => { q.ev = [...q.ev]; }).get(a.programId), '2026-11-03T00:00').app.docs.length, 4);
   // 紀錄：筆記只改使用者的部分，自動的甄選文字留著
-  const r = L.applyAction(S('市北'), 'editRecord', {notes: '記得帶信封', regNo: 'A123', ivTime: '10:20'});
+  const r = L.applyAction(S('北市大'), 'editRecord', {notes: '記得帶信封', regNo: 'A123', ivTime: '10:20'});
   assert.equal(r.notes, '甄選：書面審查 100%\n記得帶信封');
   assert.equal(L.userNotes(r), '記得帶信封');
   assert.equal(r.regNo, 'A123');
@@ -479,10 +483,10 @@ test('自己記的面試時間會出現在接下來', {skip: SKIP}, () => {
   const f = L.recordFields(a, PROGS.get(a.programId), '2026-12-01T00:00').map(x => x.key);
   assert.deepEqual(f, ['regNo', 'ivTime', 'place', 'notes']);
   assert.ok(L.recordFields(a, PROGS.get(a.programId), '2026-12-05T00:00').some(x => x.key === 'asked'));
-  assert.deepEqual(L.recordFields(S('市北'), PROGS.get(S('市北').programId), '2026-11-02T00:00').map(x => x.key), ['notes']);
+  assert.deepEqual(L.recordFields(S('北市大'), PROGS.get(S('北市大').programId), '2026-11-02T00:00').map(x => x.key), ['notes']);
 });
 test('學校頁：時程里程碑、備審顯示方式、學校順序', {skip: SKIP}, () => {
-  const now = '2026-11-02T02:30', a = S('興大'), p = PROGS.get(a.programId);
+  const now = '2026-11-02T02:30', a = S('中興'), p = PROGS.get(a.programId);
   const tl = L.timeline(a, p, now, {apps: apps0, programs: PROGS});
   assert.deepEqual(tl.filter(r => r.milestone).map(r => r.role), ['reg', 'reg', 'stage1', 'go', 'release', 'confirm']);
   assert.equal(tl.find(r => r.next).role, 'reg');
@@ -490,7 +494,7 @@ test('學校頁：時程里程碑、備審顯示方式、學校順序', {skip: S
   assert.equal(L.docsMode(a, p, now), 'list');
   assert.equal(L.docsMode(S('成大'), PROGS.get(S('成大').programId), now), 'summary');
   const {active, ended} = L.orderApps(apps0, PROGS, now);
-  assert.deepEqual(active.map(x => L.shortSchool(x.school, OPTS.aliases)), ['成大', '輔大', '市北', '興大', '高師大', '政大', '宜大', '淡江', '逢甲']);
+  assert.deepEqual(active.map(x => L.shortSchool(x.school, OPTS.aliases)), ['成大', '輔大', '北市大', '中興', '高師大', '政大', '宜大', '淡江', '逢甲']);
   assert.equal(ended.length, 0);
 });
 test('新增學校：中教大資工直接是 v3，同步不會再改', () => {

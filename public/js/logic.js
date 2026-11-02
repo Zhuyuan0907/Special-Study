@@ -63,13 +63,13 @@ export function timeText(x, now) {
 }
 
 /* ---------- 名稱 ---------- */
-// 學校簡稱：search-terms 的簡稱裡最短的；一樣長時挑不在全名裡的（興大，不是中興）；沒有就去掉「國立」「大學」。
+// 學校簡稱：大家平常的叫法，就是 search-terms 裡這間學校寫在最前面的那一個（北市大、中興、陽明交大）；
+// 後面的（市北、興大、交大）只用來搜尋。沒有寫的就去掉「國立」「大學」。
 export function shortSchool(name, aliases = {}) {
   name = String(name || '');
   if (!name) return '';
-  const own = Object.keys(aliases || {}).filter(a => aliases[a] === name);
-  own.sort((x, y) => x.length - y.length || (name.includes(x) ? 1 : 0) - (name.includes(y) ? 1 : 0));
-  if (own[0]) return own[0];
+  const own = Object.keys(aliases || {}).find(a => aliases[a] === name);
+  if (own) return own;
   const s = name.replace(/^(國立|私立|市立)/, '').replace(/大學$/, '');
   return s.length >= 2 ? s : name;
 }
@@ -258,7 +258,7 @@ export function eventsOf(app, program, opts = {}) {
     if (role === 'go' && d.kind === ivKind && isTime(app.ivTime)) time = app.ivTime;
     let parts = [];
     if (role === 'reg') parts = partsOf(d, p, mail);
-    // 印准考證、填遞補意願：一列一個勾；鐘點跟著這一列（市北 12/11 16:00 意願截止，16:00 過了才算逾期）
+    // 印准考證、填遞補意願：一列一個勾；鐘點跟著這一列（北市大 12/11 16:00 意願截止，16:00 過了才算逾期）
     else if (role === 'ticket' || role === 'intent') parts = [{key: role, name: role === 'ticket' ? ticketName(rowLabel(d)) : displayLabel(role, d, hasIv), date: d.date, time, mail: '', opt: false, rowId: d.id, kind: d.kind}];
     for (const pt of parts) pt.done = !!done.get(pt.key);
     const label = role === 'reg' ? parts.map(x => x.name).join('・') : displayLabel(role, d, hasIv);
@@ -434,7 +434,7 @@ function buildRow(app, p, g, evs, x, opts, all) {
     date = x.goLast;
     for (const pt of parts) { pt.date = date; pt.time = ''; }
   }
-  // 這列的時間跟著還沒勾的部分走：已勾的部分不決定這列的時間（勾完繳費，市北就只剩「今天郵戳」）
+  // 這列的時間跟著還沒勾的部分走：已勾的部分不決定這列的時間（勾完繳費，北市大就只剩「今天郵戳」）
   const base = parts.some(pt => !pt.done && !pt.opt) ? parts.filter(pt => !pt.done) : parts;
   let time = '', mail = '';
   if (parts.length) {
@@ -872,7 +872,7 @@ export function migrateApp(app, program, idx = 0, opts = {}) {
   for (const d of open()) nLeft[cls(d)] = (nLeft[cls(d)] || 0) + 1;
   for (const d of open()) { const cand = free(d); if (cand.length === 1 && nLeft[cls(d)] === 1) pair(d, cand[0]); }
   const left = open();
-  // 配不到的：看起來是從簡章帶進來的（特殊選才網的固定列名），就是新簡章刪掉的列（成大 推薦函截止、市北 初試成績複查），
+  // 配不到的：看起來是從簡章帶進來的（特殊選才網的固定列名），就是新簡章刪掉的列（成大 推薦函截止、北市大 初試成績複查），
   // 原樣留著標 gone（只在學校頁「全部日期」）；其他的是自己加的列。簡章怪怪的（配不到四成以上）就都當成自己的，不藏。
   const trust = rows.length > 0 && left.length <= old.length * 0.4;
   for (const d of left) {
@@ -903,7 +903,7 @@ export function migrateApp(app, program, idx = 0, opts = {}) {
       return {...d, name: shortDoc(hit), full: hit, src: 'brochure', ref: docRef(hit), ...(OPT_RE.test(hit) ? {opt: true} : {})};
     });
   }
-  // 報名步驟加上 key（市北的「網路報名完成 ✓」→ reg，「備審上傳完成…」→ docs）；名字不動
+  // 報名步驟加上 key（北市大的「網路報名完成 ✓」→ reg，「備審上傳完成…」→ docs）；名字不動
   if (Array.isArray(a.regSteps)) {
     const used = new Set(a.regSteps.map(s => s && s.key).filter(Boolean));
     for (const s of a.regSteps) if (s && !s.key) { const k = stepKey(s.name || ''); s.key = k && !used.has(k) ? k : 'x-' + (s.id || used.size); used.add(s.key); }
@@ -980,7 +980,7 @@ export function syncApp(app, program, now, opts = {}) {
     const d = a.dates.find(x => x.ref === r.ref);
     if (!d) { a.dates.push({id: uid(), kind: r.kind, ...VAL(r), note: r.note, src: 'brochure', ref: r.ref, bro: VAL(r), ...(tag ? {upd: tag} : {})}); log(whatOf(r, p), '', changeText(r), {added: true, kind: r.kind}); continue; }
     if (d.gone) { delete d.gone; quiet = true; } // 簡章又有這一列了
-    // 只改附註（市北「限時掛號，郵戳為憑」）或列名：寫回，不通知；自己改過名的留自己的列名
+    // 只改附註（北市大「限時掛號，郵戳為憑」）或列名：寫回，不通知；自己改過名的留自己的列名
     const note = noteFrom(d, d.ref, r);
     if (nz(note) !== nz(d.note)) { d.note = note; quiet = true; }
     if (sameVal(d.bro, r)) continue;
