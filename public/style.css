@@ -292,8 +292,10 @@ dialog.modal:focus { outline: none; }
 @media (max-width: 600px) {
   .nav { gap: 6px; padding: 0 8px 0 16px; }
   .brand-name, .brand-year { display: none; }
-  .tabs { gap: 0; }
-  .tabs a { padding: 0 8px; }
+  /* 頂欄多了「AI」：分頁窄一點；更窄的手機（375 以下）分頁可以橫向滑，不會疊在右邊的按鈕上 */
+  .tabs { gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs a { padding: 0 5px; }
   .nav-actions { gap: 0; }
   .nav-actions .btn { padding: 0 8px; }
   dialog.modal, dialog.modal.wide { width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }

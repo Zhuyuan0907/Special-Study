@@ -71,6 +71,7 @@ journalctl -u special-study -f              # 看紀錄
 - **行事曆訂閱**：iPhone／Mac 直接訂閱 `webcal://…/api/calendar.ics`（要做的事前一天和三小時前提醒）；Google 日曆用下載的 `.ics` 匯入（Google 的伺服器連不到家裡的電腦，所以不能用網址訂閱）。
 - **備份與匯出**：下載 JSON 備份、從備份匯入（會先告訴你會取代幾間）、下載 CSV（總表、花費）、複製總表貼到試算表；學校頁 ⋯ › 列印這一間。
 - **學測、分科的日期**會一起顯示在行事曆（可關掉）。
+- **問 AI**（頂欄「問 AI」或按 `A`）：問自己的學校或簡章（「中興面試要帶什麼？」），回答會附簡章頁碼。用這台電腦已登入的 [Claude Code](https://claude.com/claude-code)，或在 設定 › 問 AI 貼 Anthropic API Key（只存在這台電腦的 `data/secrets.json`，不會上傳）。預設 Claude Opus 5.5、思考「更高」。它只能查紀錄和簡章，不能改紀錄、不能讀別的檔案。
 
 ## 資料從哪裡來、要注意什麼
 
@@ -94,6 +95,7 @@ journalctl -u special-study -f              # 看紀錄
 | `data/search-terms.json` | 搜尋用的簡稱與同義詞（清大、資工…） | 要 |
 | `data/season.json` | 學測、分科等大考日期 | 要 |
 | `data/brochures/pdf/*.pdf`、`data/raw/` | 簡章原檔與 API 原始資料 | 不要 |
+| `data/ai.json`、`data/secrets.json` | 問 AI 的設定與對話、API Key | 不要 |
 
 `records.json` 大致長這樣（`status`：`prep` 準備中、`applied` 已報名、`interview` 待面試、`waiting` 等放榜、`admitted` 正取、`waitlist` 備取、`rejected` 未錄取、`out` 一階未通過、`skipped` 沒有報名；舊的 v2 檔案第一次啟動時會先備份、再自動升級）：
 
@@ -113,7 +115,7 @@ journalctl -u special-study -f              # 看紀錄
 }
 ```
 
-API（都是 JSON；寫入要帶 `X-Client: 3`，舊版網頁會被擋下來請它重新整理）：`GET /api/records`、`GET /api/meta`、`PUT /api/apps/:id`、`DELETE /api/apps/:id`、`PUT /api/profile`、`PUT /api/todos`、`GET /api/search?q=`、`GET /api/brochure/:code?pages=`、`GET /api/table`（`.csv`）、`GET /api/export.md`、`GET /api/export`、`POST /api/import`（`?dry=1` 只回報）、`GET /api/calendar.ics`、`GET /api/digest`、`POST /api/notify/test`、`POST /api/sheets/sync`。
+API（都是 JSON；寫入要帶 `X-Client: 3`，舊版網頁會被擋下來請它重新整理）：`GET /api/records`、`GET /api/meta`、`PUT /api/apps/:id`、`DELETE /api/apps/:id`、`PUT /api/profile`、`PUT /api/todos`、`GET /api/search?q=`、`GET /api/brochure/:code?pages=`、`GET /api/table`（`.csv`）、`GET /api/export.md`、`GET /api/export`、`POST /api/import`（`?dry=1` 只回報）、`GET /api/calendar.ics`、`GET /api/digest`、`POST /api/notify/test`、`POST /api/sheets/sync`、`/api/ai/…`（問 AI：`status`、`settings`、`key`、`chats`、`ask` 串流）。
 
 改程式：日期怎麼算、哪些事要做都在 `public/js/logic.js`（網頁和伺服器共用，改了要重新啟動伺服器）；`npm test` 跑測試。
 
@@ -130,7 +132,7 @@ npm run build-data   # 下載系組資料與簡章 PDF，重建 data/programs.js
 
 ## 安全提醒
 
-這個伺服器沒有帳號密碼，同一個網路上的人都能看到和修改你的紀錄，也能看到設定裡的 webhook 網址。只在家裡或信任的內網使用，不要把連接埠開到網際網路。
+這個伺服器沒有帳號密碼，同一個網路上的人都能看到和修改你的紀錄，也能看到設定裡的 webhook 網址、用你的 Claude Code 或 API Key 問 AI（API Key 本身不會被看到）。只在家裡或信任的內網使用，不要把連接埠開到網際網路。
 
 為了擋 DNS rebinding（別的網站把自己的網域指到你的電腦），伺服器只接受用 IP、`localhost` 或這台電腦的名字（含 `.local`）開的網頁。要用別的名字（路由器給的 `.lan` 名稱、反向代理的網域）開，啟動時加上 `ALLOWED_HOSTS=名字1,名字2`。
 

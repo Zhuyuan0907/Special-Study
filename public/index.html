@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="css/money.css">
 <link rel="stylesheet" href="css/add.css">
 <link rel="stylesheet" href="css/settings.css">
+<link rel="stylesheet" href="css/ai.css">
 <!-- 一次把所有模組一起下載，不用等 app.js 載完才發現還要下載哪些 -->
 <link rel="modulepreload" href="js/app.js">
 <link rel="modulepreload" href="js/core.js">
@@ -27,6 +28,8 @@
 <link rel="modulepreload" href="js/money.js">
 <link rel="modulepreload" href="js/add.js">
 <link rel="modulepreload" href="js/settings.js">
+<link rel="modulepreload" href="js/ai.js">
+<link rel="modulepreload" href="js/md.js">
 <!-- 配色：預設跟著系統；設定裡選了淺色／深色就記在這台電腦（?theme= 給測試用） -->
 <script>try { const t = new URLSearchParams(location.search).get('theme') || localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}</script>
 </head>
@@ -41,6 +44,7 @@
     <a href="#money" data-view="money">花費</a>
   </nav>
   <div class="nav-actions">
+    <button class="btn quiet" type="button" id="btn-ai" aria-expanded="false" aria-controls="ai" aria-label="問 AI"><span class="ai-full">問 AI</span><span class="ai-short" aria-hidden="true">AI</span></button>
     <button class="btn quiet" type="button" id="btn-settings">設定</button>
     <button class="btn add" type="button" id="btn-add">＋ 加學校</button>
   </div>

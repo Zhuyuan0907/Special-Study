@@ -1,10 +1,11 @@
-// 設定（#dlg-settings）：左邊六項，右邊一次一頁。
-// 行事曆訂閱・每日提醒・Google 試算表・我的條件・備份與匯出・外觀；底下一行簡章資料的來源與日期。
+// 設定（#dlg-settings）：左邊七項，右邊一次一頁。
+// 行事曆訂閱・每日提醒・Google 試算表・我的條件・備份與匯出・問 AI（ai.js 畫、ai.js 處理）・外觀；底下一行簡章資料的來源與日期。
 // 文字欄位按「儲存」才存；勾選、配色一改就存。結果寫在按鈕旁邊（錯誤用 .form-err），不用提示。
 import {S, P, $, $$, esc, request, toast, copyText, saveProfile, refresh, setTheme, theme, CONDITIONS, COND_BY_ID} from './core.js';
 import {openDialog, timeInput, normTime, md} from './ui.js';
+import {settingsPane as aiPane} from './ai.js';
 
-const PANES = [['ics', '行事曆訂閱'], ['notify', '每日提醒'], ['sheets', 'Google 試算表'], ['cond', '我的條件'], ['export', '備份與匯出'], ['look', '外觀']];
+const PANES = [['ics', '行事曆訂閱'], ['notify', '每日提醒'], ['sheets', 'Google 試算表'], ['cond', '我的條件'], ['export', '備份與匯出'], ['ai', '問 AI'], ['look', '外觀']];
 // 第二張工作表「花費」在 d.extra；舊版的程式不認得 extra，照樣只寫總表
 const APPS_SCRIPT = `function doPost(e) {
   var d = JSON.parse(e.postData.contents);
@@ -116,7 +117,7 @@ function paneLook() {
     ${row('大考日期', `<label class="check"><input type="checkbox" data-exams${hide ? '' : ' checked'}><span>行事曆顯示學測、分科測驗的日期</span></label>`)}
     ${row('快速鍵', '<span class="set-keys"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> 切換分頁　<kbd>N</kbd> 加學校　<kbd>Esc</kbd> 關閉</span>')}`;
 }
-const BODY = {ics: paneIcs, notify: paneNotify, sheets: paneSheets, cond: paneCond, export: paneExport, look: paneLook};
+const BODY = {ics: paneIcs, notify: paneNotify, sheets: paneSheets, cond: paneCond, export: paneExport, ai: aiPane, look: paneLook};
 
 function foot() {
   const src = String(P.source || '');
